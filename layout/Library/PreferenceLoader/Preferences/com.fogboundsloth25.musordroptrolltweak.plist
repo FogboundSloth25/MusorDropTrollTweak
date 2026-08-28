@@ -41,11 +41,13 @@
             <key>label</key>
             <string>Задержка показа</string>
             <key>footerText</key>
-            <string>Сколько секунд ждать после того, как приложение стало активным. При изменении задержки текущий таймер отменяется и новый отсчёт начинается сразу.</string>
+            <string>Сколько секунд ждать после активации приложения. Изменили значение — текущий таймер отменяется и начинается новый отсчёт.</string>
         </dict>
         <dict>
             <key>cell</key>
             <string>PSSliderCell</string>
+            <key>label</key>
+            <string>Задержка (сек.)</string>
             <key>key</key>
             <string>delay</string>
             <key>default</key>
@@ -71,11 +73,13 @@
             <key>label</key>
             <string>Громкость</string>
             <key>footerText</key>
-            <string>Громкость встроенной аудиодорожки: 0% — без звука, 100% — полная громкость.</string>
+            <string>Громкость аудиодорожки: 0% — без звука, 100% — полная громкость.</string>
         </dict>
         <dict>
             <key>cell</key>
             <string>PSSliderCell</string>
+            <key>label</key>
+            <string>Громкость (%)</string>
             <key>key</key>
             <string>volume</string>
             <key>default</key>
@@ -99,9 +103,9 @@
             <key>cell</key>
             <string>PSGroupCell</string>
             <key>label</key>
-            <string>Кастомное видео</string>
+            <string>Видео</string>
             <key>footerText</key>
-            <string>Пустое поле = встроенное видео с удалённым зелёным фоном. Для своего видео укажите полный путь к MP4 или MOV. Кастомный файл не изменяется.</string>
+            <string>Пустое поле использует встроенное видео с удалённым зелёным фоном. Для собственного MP4/MOV укажите полный путь. Кастомный файл не изменяется.</string>
         </dict>
         <dict>
             <key>cell</key>
