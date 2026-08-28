@@ -1,18 +1,27 @@
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
+#if __has_include(<roothide.h>)
+#import <roothide.h>
+#define MDJBRPath(path) jbroot(path)
+#elif __has_include(<rootless.h>)
+#import <rootless.h>
+#define MDJBRPath(path) ROOT_PATH_NS(path)
+#else
+#define MDJBRPath(path) (path)
+#endif
 
 static CFStringRef const kMDPreferencesDomain = CFSTR("com.fogboundsloth25.musordroptrolltweak");
 static NSString * const kMDPreferencesChanged = @"com.fogboundsloth25.musordroptrolltweak/preferences.changed";
+static NSString * const kMDVideoRelativePath = @"/Library/Application Support/MusorDropTrollTweak/video_alpha.mov";
 
 static NSTimeInterval MDRolloutDelay = 10.0;
 static float MDVolume = 1.0f;
 static BOOL MDEnabled = YES;
 static NSString *MDVideoPath = nil;
 
-static BOOL MDTimerScheduled = NO;
+static dispatch_block_t MDTimerBlock = nil;
 static BOOL MDShowing = NO;
 static BOOL MDPendingReschedule = NO;
-static dispatch_block_t MDTimerBlock = nil;
 static UIWindow *MDOverlayWindow = nil;
 static UIWindow *MDUnderlyingWindow = nil;
 static id MDActiveObserver = nil;
@@ -34,10 +43,8 @@ static NSString *MDNormalizedVideoPath(NSString *path) {
 
 static NSString *MDDefaultVideoPath(void) {
     NSFileManager *fm = [NSFileManager defaultManager];
-    NSString *jbroot = @"/var/jb/Library/Application Support/MusorDropTrollTweak/video_alpha.mov";
-    NSString *rootful = @"/Library/Application Support/MusorDropTrollTweak/video_alpha.mov";
-    if ([fm fileExistsAtPath:jbroot]) return jbroot;
-    if ([fm fileExistsAtPath:rootful]) return rootful;
+    NSString *path = MDJBRPath(kMDVideoRelativePath);
+    if ([path isKindOfClass:NSString.class] && [fm fileExistsAtPath:path]) return path;
     return nil;
 }
 
@@ -70,7 +77,6 @@ static void MDCancelTimer(void) {
         dispatch_block_cancel(MDTimerBlock);
         MDTimerBlock = nil;
     }
-    MDTimerScheduled = NO;
 }
 
 static void MDLoadPreferences(void) {
@@ -84,13 +90,13 @@ static void MDLoadPreferences(void) {
 
     if ([volume isKindOfClass:NSNumber.class]) {
         CGFloat stored = [volume doubleValue];
-        // Compatibility with releases that stored volume in the 0.0-1.0 range.
+        // Migrate old 0.0-1.0 values while allowing the UI to use 0-100 percent.
         MDVolume = stored <= 1.0 ? MAX(0.0, MIN(1.0, stored)) : MAX(0.0, MIN(1.0, stored / 100.0));
     } else {
         MDVolume = 1.0f;
     }
 
-    MDVideoPath = ([video isKindOfClass:NSString.class] && [video length] > 0) ? [video copy] : nil;
+    MDVideoPath = ([video isKindOfClass:NSString.class] && video.length > 0) ? [video copy] : nil;
 }
 
 static void MDStartTimer(void);
@@ -114,8 +120,6 @@ static void MDPlay(void);
     self.view.opaque = NO;
     self.view.userInteractionEnabled = YES;
 
-    self.playerLayer = nil;
-
     self.playerLayer = [AVPlayerLayer layer];
     self.playerLayer.frame = self.view.bounds;
     self.playerLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
@@ -134,16 +138,15 @@ static void MDPlay(void);
     [self.view addSubview:self.blocker];
 
     NSString *path = MDNormalizedVideoPath(MDVideoPath);
-    if (![path length] || ![[NSFileManager defaultManager] fileExistsAtPath:path]) path = MDDefaultVideoPath();
-
-    if (![path length]) {
-        NSLog(@"[MusorDropTrollTweak] no video file found in configured/default paths");
-        [self finishWithResult:NO];
+    if (!path.length || ![[NSFileManager defaultManager] fileExistsAtPath:path]) path = MDDefaultVideoPath();
+    if (!path.length) {
+        NSLog(@"[MusorDropTrollTweak] video not found: custom=%@ default=%@", MDVideoPath, MDDefaultVideoPath());
+        [self finishWithResult:NO restartTimer:NO];
         return;
     }
 
     NSURL *url = [NSURL fileURLWithPath:path isDirectory:NO];
-    AVURLAsset *asset = [AVURLAsset URLAssetWithURL:url options:nil];
+    AVURLAsset *asset = [AVURLAsset URLAssetWithURL:url options:@{AVURLAssetPreferPreciseDurationAndTimingKey: @YES}];
     AVPlayerItem *item = [AVPlayerItem playerItemWithAsset:asset];
     self.player = [AVPlayer playerWithPlayerItem:item];
     self.player.volume = MDVolume;
@@ -152,22 +155,22 @@ static void MDPlay(void);
 
     __weak typeof(self) weakSelf = self;
     self.endObserver = [[NSNotificationCenter defaultCenter] addObserverForName:AVPlayerItemDidPlayToEndTimeNotification object:item queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
-        [weakSelf finishWithResult:YES];
+        [weakSelf finishWithResult:YES restartTimer:YES];
     }];
     self.failedObserver = [[NSNotificationCenter defaultCenter] addObserverForName:AVPlayerItemFailedToPlayToEndTimeNotification object:item queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
         NSLog(@"[MusorDropTrollTweak] AVPlayer failed: %@", note.userInfo);
-        [weakSelf finishWithResult:NO];
+        [weakSelf finishWithResult:NO restartTimer:YES];
     }];
 
-    if (@available(iOS 10.0, *)) {
-        AVAudioSession *audio = [AVAudioSession sharedInstance];
-        NSError *audioError = nil;
-        [audio setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeMoviePlayback options:0 error:&audioError];
-        if (audioError) NSLog(@"[MusorDropTrollTweak] audio category error: %@", audioError);
-        audioError = nil;
-        [audio setActive:YES error:&audioError];
-        if (audioError) NSLog(@"[MusorDropTrollTweak] audio session error: %@", audioError);
+    AVAudioSession *audio = [AVAudioSession sharedInstance];
+    NSError *audioError = nil;
+    [audio setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeMoviePlayback options:0 error:&audioError];
+    if (audioError) NSLog(@"[MusorDropTrollTweak] audio category error: %@", audioError);
+    audioError = nil;
+    [audio setActive:YES error:&audioError];
+    if (audioError) NSLog(@"[MusorDropTrollTweak] audio session error: %@", audioError);
 
+    if (@available(iOS 10.0, *)) {
         [asset loadValuesAsynchronouslyForKeys:@[@"playable"] completionHandler:^{
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (weakSelf.finishing) return;
@@ -176,8 +179,8 @@ static void MDPlay(void);
                 if (status == AVKeyValueStatusLoaded && asset.playable) {
                     [weakSelf.player play];
                 } else {
-                    NSLog(@"[MusorDropTrollTweak] video asset is not playable: %@", error);
-                    [weakSelf finishWithResult:NO];
+                    NSLog(@"[MusorDropTrollTweak] asset not playable: status=%ld error=%@", (long)status, error);
+                    [weakSelf finishWithResult:NO restartTimer:YES];
                 }
             });
         }];
@@ -199,7 +202,7 @@ static void MDPlay(void);
     self.blocker.frame = self.view.bounds;
 }
 
-- (void)finishWithResult:(BOOL)completed {
+- (void)finishWithResult:(BOOL)completed restartTimer:(BOOL)restartTimer {
     if (self.finishing) return;
     self.finishing = YES;
 
@@ -225,15 +228,17 @@ static void MDPlay(void);
     }
 
     MDShowing = NO;
-    MDTimerScheduled = NO;
-
-    if (MDEnabled && (completed || MDPendingReschedule)) {
+    if (restartTimer && MDEnabled) {
         MDPendingReschedule = NO;
         dispatch_async(dispatch_get_main_queue(), ^{
             MDLoadPreferences();
             MDStartTimer();
         });
+    } else if (MDPendingReschedule && MDEnabled) {
+        MDPendingReschedule = NO;
+        MDStartTimer();
     }
+    (void)completed;
 }
 
 - (void)dealloc {
@@ -249,10 +254,7 @@ static void MDPlay(void);
 
 static void MDPlay(void) {
     if (!MDEnabled || MDShowing) return;
-    if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
-        MDTimerScheduled = NO;
-        return;
-    }
+    if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return;
 
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!MDEnabled || MDShowing) return;
@@ -265,16 +267,16 @@ static void MDPlay(void) {
         }
 
         NSString *path = MDNormalizedVideoPath(MDVideoPath);
-        if (![path length] || ![[NSFileManager defaultManager] fileExistsAtPath:path]) path = MDDefaultVideoPath();
-        if (![path length]) {
-            NSLog(@"[MusorDropTrollTweak] video path unavailable");
+        if (!path.length || ![[NSFileManager defaultManager] fileExistsAtPath:path]) path = MDDefaultVideoPath();
+        if (!path.length) {
+            NSLog(@"[MusorDropTrollTweak] no usable video path");
             MDStartTimer();
             return;
         }
 
         MDUnderlyingWindow = underlying;
         MDShowing = YES;
-        MDTimerScheduled = NO;
+        MDCancelTimer();
 
         MDOverlayViewController *controller = [MDOverlayViewController new];
         UIWindow *window = [[UIWindow alloc] initWithWindowScene:scene];
@@ -282,7 +284,7 @@ static void MDPlay(void) {
         window.windowLevel = UIWindowLevelAlert + 1.0;
         window.backgroundColor = UIColor.clearColor;
         window.opaque = NO;
-        window.frame = scene.screen.bounds;
+        window.frame = scene.coordinateSpace.bounds;
         MDOverlayWindow = window;
         [window makeKeyAndVisible];
     });
@@ -294,10 +296,8 @@ static void MDStartTimer(void) {
     if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return;
 
     NSTimeInterval delay = MAX(0.0, MDRolloutDelay);
-    MDTimerScheduled = YES;
     MDTimerBlock = dispatch_block_create(DISPATCH_BLOCK_INHERIT_QOS_CLASS, ^{
         dispatch_async(dispatch_get_main_queue(), ^{
-            MDTimerScheduled = NO;
             MDTimerBlock = nil;
             MDPlay();
         });
@@ -314,17 +314,16 @@ static void MDPreferencesChanged(void) {
             MDPendingReschedule = NO;
             if (MDShowing) {
                 MDOverlayViewController *controller = (MDOverlayViewController *)MDOverlayWindow.rootViewController;
-                [controller finishWithResult:NO];
+                [controller finishWithResult:NO restartTimer:NO];
             }
             return;
         }
 
+        // Any settings change restarts the countdown from zero.
         if (MDShowing) {
             MDPendingReschedule = YES;
             return;
         }
-
-        // Any preference change, including delay changes, begins a fresh countdown now.
         MDStartTimer();
     });
 }
@@ -336,23 +335,10 @@ static void MDDarwinPreferenceCallback(CFNotificationCenterRef center, void *obs
 %ctor {
     NSBundle *bundle = [NSBundle mainBundle];
     NSString *bundleID = bundle.bundleIdentifier ?: @"";
-
-    // RootHide's App List controls which third-party applications actually receive
-    // injected tweaks. This constructor only runs in processes where the loader
-    // has already injected the dylib.
     if (bundleID.length == 0 || [bundleID hasPrefix:@"com.apple."]) return;
     if ([bundle.bundleURL.pathExtension.lowercaseString isEqualToString:@"appex"]) return;
 
     MDLoadPreferences();
-
-    NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
-    MDActiveObserver = [nc addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
-        MDLoadPreferences();
-        MDStartTimer();
-    }];
-    MDBackgroundObserver = [nc addObserverForName:UIApplicationDidEnterBackgroundNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
-        MDCancelTimer();
-    }];
 
     CFNotificationCenterAddObserver(
         CFNotificationCenterGetDarwinNotifyCenter(),
@@ -362,6 +348,15 @@ static void MDDarwinPreferenceCallback(CFNotificationCenterRef center, void *obs
         NULL,
         CFNotificationSuspensionBehaviorDeliverImmediately
     );
+
+    NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
+    MDActiveObserver = [nc addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
+        MDLoadPreferences();
+        MDStartTimer();
+    }];
+    MDBackgroundObserver = [nc addObserverForName:UIApplicationDidEnterBackgroundNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
+        MDCancelTimer();
+    }];
 
     dispatch_async(dispatch_get_main_queue(), ^{
         if (MDEnabled && UIApplication.sharedApplication.applicationState == UIApplicationStateActive) MDStartTimer();
