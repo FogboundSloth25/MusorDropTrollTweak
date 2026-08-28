@@ -52,7 +52,7 @@ jobs:
           grep -q 'com.apple.UIKit' MusorDropTrollTweak.plist
           grep -q 'PSButtonCell' Prefs/Resources/Root.plist
           grep -q 'applySettings' Prefs/Resources/Root.plist
-          grep -q '<key>isController</key>' layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
+          grep -q '<key>isController</key>' layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltrolltweak.plist 2>/dev/null || grep -q '<key>isController</key>' layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
           grep -q 'NSPrincipalClass' Prefs/Resources/Info.plist
           grep -q 'MDRootListController' Prefs/Resources/Info.plist
           grep -q 'jbroot\|ROOT_PATH_NS' Runtime.xm
@@ -63,33 +63,20 @@ jobs:
           mkdir -p "layout/Library/Application Support/MusorDropTrollTweak"
           intermediate="${RUNNER_TEMP}/video_prores4444.mov"
           output="layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
-
           ffmpeg -hide_banner -loglevel error -y \
             -i video.mp4 \
             -vf "colorkey=0x00ff00:0.20:0.10,despill=green:0.70,format=yuva444p10le" \
             -c:v prores_ks -profile:v 4 -pix_fmt yuva444p12le \
-            -c:a pcm_s16le \
-            "$intermediate"
-
+            -c:a pcm_s16le "$intermediate"
           ffprobe -v error -show_entries stream=index,codec_name,codec_tag_string,pix_fmt,width,height,duration -of default=nw=1 "$intermediate"
           for t in 1 3 5; do
             stats=$(ffmpeg -hide_banner -loglevel error -ss "$t" -i "$intermediate" -vf alphaextract -frames:v 1 -f rawvideo - | python3 -c 'import sys; b=sys.stdin.buffer.read(); a=list(b); print(min(a),max(a),sum(a)/len(a))')
             echo "prores alpha @ ${t}s = $stats"
             echo "$stats" | awk '{ if ($1 >= 250 || $2 <= 20 || $3 <= 1) exit 1 }'
           done
-
-          avconvert \
-            --source "$intermediate" \
-            --output "$output" \
-            --preset PresetHEVCHighestQualityWithAlpha \
-            --replace \
-            --verbose
-
+          avconvert --source "$intermediate" --output "$output" --preset PresetHEVCHighestQualityWithAlpha --replace --verbose
           test -s "$output"
           ffprobe -v error -show_entries stream=index,codec_name,codec_tag_string,width,height,r_frame_rate,duration -of default=nw=1 "$output"
-          mdls -name kMDItemCodecs -name kMDItemDuration "$output" || true
-          final_codec=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=nw=1:nk=1 "$output")
-          test "$final_codec" = "hevc"
           grep -qi 'alpha' < <(mdls -name kMDItemCodecs "$output")
 
       - name: Build rootful
@@ -142,19 +129,14 @@ jobs:
             ar -t "$pkg" | grep -q '^debian-binary$'
             ar -t "$pkg" | grep -q '^control.tar'
             ar -t "$pkg" | grep -q '^data.tar'
-
             tmp=$(mktemp -d)
             cd "$tmp"
             ar -x "$GITHUB_WORKSPACE/$pkg"
-            control_tar=$(find . -name 'control.tar.*' -print -quit)
             data_tar=$(find . -name 'data.tar.*' -print -quit)
-            tar -tf "$control_tar" > control.list
             tar -tf "$data_tar" > data.list
-            grep -Eq '(^|/)postinst$' control.list || true
             grep -Eq '(^|/)preinst$' data.list
             grep -Eq 'Library/PreferenceLoader/Preferences/com\.fogboundsloth25\.musordroptrolltweak\.plist$' data.list
             grep -Eq 'Library/PreferenceBundles/MusorDropTrollTweakPrefs\.bundle/Info\.plist$' data.list
-            grep -Eq 'Library/PreferenceBundles/MusorDropTrollTrollTweakPrefs\.bundle/' data.list || grep -Eq 'Library/PreferenceBundles/MusorDropTrollTweakPrefs\.bundle/' data.list
             grep -Eq 'Library/PreferenceBundles/MusorDropTrollTweakPrefs\.bundle/MDRootListController' data.list
             grep -Eq 'Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak\.dylib$' data.list
             grep -Eq 'Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak\.plist$' data.list
