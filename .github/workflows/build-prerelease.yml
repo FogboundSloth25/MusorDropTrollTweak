@@ -2,8 +2,7 @@ name: Build Tweak Pre-release
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -16,70 +15,49 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Detect tweak source
-        id: source
-        shell: bash
-        run: |
-          if [[ -f Makefile ]]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "No Theos Makefile found; source-only repository state, so no tweak package will be released."
-          fi
-
       - name: Install build dependencies
-        if: steps.source.outputs.available == 'true'
         run: |
           brew update
           brew install ldid dpkg ffmpeg
 
       - name: Install Theos
-        if: steps.source.outputs.available == 'true'
         run: |
           git clone --depth=1 https://github.com/theos/theos.git "$HOME/theos"
           echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
 
-      - name: Prepare transparent default video
-        if: steps.source.outputs.available == 'true'
+      - name: Prepare default video with green screen removed
         run: |
           set -euo pipefail
           test -f video.mp4
-          mkdir -p build/assets
+          mkdir -p Resources
           ffmpeg -hide_banner -loglevel error -y \
             -i video.mp4 \
-            -vf "chromakey=0x00ff00:0.22:0.08,format=yuva444p10le" \
+            -vf "chromakey=0x00ff00:0.20:0.10,format=yuva444p10le" \
             -c:v prores_ks -profile:v 4 -pix_fmt yuva444p10le \
-            -an build/assets/video_alpha.mov
+            -an Resources/video_alpha.mov
+          test -s Resources/video_alpha.mov
 
-      - name: Build tweak
-        if: steps.source.outputs.available == 'true'
+      - name: Build tweak packages
         run: |
           set -euo pipefail
           make package FINALPACKAGE=1 STRIP=1
 
       - name: Collect packages
-        if: steps.source.outputs.available == 'true'
         run: |
           set -euo pipefail
           mkdir -p build/packages
-          find . -type f \( -name '*.deb' -o -name '*.pkg' -o -name '*.tipa' \) -not -path './build/*' -exec cp -v {} build/packages/ \;
-          if ! find build/packages -type f | grep -q .; then
-            echo "ERROR: The build completed without producing a package (.deb/.pkg/.tipa)."
-            exit 1
-          fi
+          find . -type f \( -name '*.deb' -o -name '*.pkg' -o -name '*.tipa' \) \
+            -not -path './build/*' -exec cp -v {} build/packages/ \;
+          test -n "$(find build/packages -type f -print -quit)"
 
       - name: Upload workflow artifact
-        if: steps.source.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: MusorDropTrollTweak-build-${{ github.run_number }}
-          path: |
-            build/packages/*
-            build/assets/video_alpha.mov
+          path: build/packages/*
           if-no-files-found: error
 
       - name: Create GitHub pre-release
-        if: steps.source.outputs.available == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -90,10 +68,4 @@ jobs:
             --prerelease \
             --title "$TITLE" \
             --notes "Automatic pre-release build from commit ${GITHUB_SHA}." \
-            build/packages/* \
-            build/assets/video_alpha.mov
-
-      - name: Report missing source
-        if: steps.source.outputs.available == 'false'
-        run: |
-          echo "Tweak source is not present in this revision. Add the Theos source (including Makefile) to enable compilation and pre-release publishing."
+            build/packages/*
