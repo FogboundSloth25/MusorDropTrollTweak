@@ -21,6 +21,8 @@
             <string>enabled</string>
             <key>DefaultValue</key>
             <true/>
+            <key>defaults</key>
+            <string>com.fogboundsloth25.musordroptrolltweak</string>
             <key>PostNotification</key>
             <string>com.fogboundsloth25.musordroptrolltweak/preferences.changed</string>
         </dict>
@@ -39,6 +41,8 @@
             <real>60.0</real>
             <key>ShowValue</key>
             <true/>
+            <key>defaults</key>
+            <string>com.fogboundsloth25.musordroptrolltweak</string>
             <key>PostNotification</key>
             <string>com.fogboundsloth25.musordroptrolltweak/preferences.changed</string>
         </dict>
@@ -57,6 +61,8 @@
             <real>1.0</real>
             <key>ShowValue</key>
             <true/>
+            <key>defaults</key>
+            <string>com.fogboundsloth25.musordroptrolltweak</string>
             <key>PostNotification</key>
             <string>com.fogboundsloth25.musordroptrolltweak/preferences.changed</string>
         </dict>
@@ -75,6 +81,8 @@
             <false/>
             <key>Placeholder</key>
             <string>Полный путь к MP4/MOV</string>
+            <key>defaults</key>
+            <string>com.fogboundsloth25.musordroptrolltweak</string>
             <key>PostNotification</key>
             <string>com.fogboundsloth25.musordroptrolltweak/preferences.changed</string>
         </dict>
