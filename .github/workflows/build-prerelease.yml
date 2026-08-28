@@ -33,7 +33,7 @@ jobs:
 
       - name: Validate project
         run: |
-          set -e
+          set -euo pipefail
           test -s Makefile
           test -s Runtime.xm
           test -s MusorDropTrollTweak.plist
@@ -49,13 +49,14 @@ jobs:
           plutil -lint Prefs/Resources/Info.plist
           plutil -lint Prefs/Resources/Root.plist
           plutil -lint layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
-          grep -q 'com.apple.UIKit' MusorDropTrollTweak.plist
-          grep -q 'PSButtonCell' Prefs/Resources/Root.plist
-          grep -q 'applySettings' Prefs/Resources/Root.plist
-          grep -q '<key>isController</key>' layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
-          grep -q 'NSPrincipalClass' Prefs/Resources/Info.plist
-          grep -q 'MDRootListController' Prefs/Resources/Info.plist
-          grep -q 'jbroot\|ROOT_PATH_NS' Runtime.xm
+          grep -Fq 'com.apple.springboard' MusorDropTrollTweak.plist
+          grep -Fq 'com.apple.springboard' Runtime.xm
+          grep -Fq 'PSButtonCell' Prefs/Resources/Root.plist
+          grep -Fq 'applySettings' Prefs/Resources/Root.plist
+          grep -Fq '<key>isController</key>' layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
+          grep -Fq 'NSPrincipalClass' Prefs/Resources/Info.plist
+          grep -Fq 'MDRootListController' Prefs/Resources/Info.plist
+          grep -Eq 'jbroot|ROOT_PATH_NS' Runtime.xm
 
       - name: Build transparent HEVC video
         run: |
@@ -135,7 +136,7 @@ jobs:
 
       - name: Verify packages
         run: |
-          set -e
+          set -euo pipefail
           files=(build/packages/*.deb)
           test "${#files[@]}" -eq 3
           for pkg in "${files[@]}"; do
@@ -144,31 +145,29 @@ jobs:
             ar -t "$pkg" | grep -q '^debian-binary$'
             ar -t "$pkg" | grep -q '^control.tar'
             ar -t "$pkg" | grep -q '^data.tar'
+
             tmp=$(mktemp -d)
-            cd "$tmp"
-            ar -x "$GITHUB_WORKSPACE/$pkg"
-            control_tar=$(find . -name 'control.tar.*' -print -quit)
-            data_tar=$(find . -name 'data.tar.*' -print -quit)
+            ar -x "$GITHUB_WORKSPACE/$pkg" -C "$tmp"
+            control_tar=$(find "$tmp" -name 'control.tar.*' -print -quit)
+            data_tar=$(find "$tmp" -name 'data.tar.*' -print -quit)
             test -n "$control_tar"
             test -n "$data_tar"
-            tar -tf "$control_tar" | sed 's#^\./##' > control.list
-            tar -tf "$data_tar" | sed 's#^\./##' > data.list
-            echo '--- control.tar contents ---'
-            cat control.list
-            echo '--- data.tar contents ---'
-            cat data.list
-            if ! grep -Eq '^preinst$' control.list && ! grep -Eq '^preinst$' data.list; then
-              echo 'ERROR: preinst missing from package'
-              exit 1
-            fi
-            grep -Eq '^Library/PreferenceLoader/Preferences/com\.fogboundsloth25\.musordroptrolltweak\.plist$' data.list
-            grep -Eq '^Library/PreferenceBundles/MusorDropTrollTweakPrefs\.bundle/Info\.plist$' data.list
-            grep -Eq '^Library/PreferenceBundles/MusorDropTrollTweakPrefs\.bundle/MDRootListController' data.list
-            grep -Eq '^Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak\.dylib$' data.list
-            grep -Eq '^Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak\.plist$' data.list
-            grep -Eq '^Library/Application Support/MusorDropTrollTweak/video_alpha\.mov$' data.list
+
+            mkdir -p "$tmp/control" "$tmp/data"
+            tar -xf "$control_tar" -C "$tmp/control"
+            tar -xf "$data_tar" -C "$tmp/data"
+
+            test -f "$tmp/control/control"
+            test -f "$tmp/data/preinst"
+            test -f "$tmp/data/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist"
+            test -f "$tmp/data/Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/Info.plist"
+            test -f "$tmp/data/Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/MDRootListController"
+            test -f "$tmp/data/Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.dylib"
+            test -f "$tmp/data/Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.plist"
+            test -f "$tmp/data/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
+
+            echo "Package contents verified."
             rm -rf "$tmp"
-            cd "$GITHUB_WORKSPACE"
           done
 
       - name: Upload packages
@@ -186,5 +185,5 @@ jobs:
           gh release create "nightly-${GITHUB_RUN_NUMBER}" \
             --prerelease \
             --title "MusorDropTrollTweak nightly ${GITHUB_RUN_NUMBER}" \
-            --notes "Automated build: Apple HEVC with Alpha video, RGB green-screen removal, AVPlayer/AVPlayerLayer playback, smooth background dimming, audio session support, Apply button for settings, lock-aware repeating countdown, rootful/rootless/RootHide packages." \
+            --notes "Automated global SpringBoard build: Apple HEVC with Alpha video, green-screen removal, global overlay, audio playback, smooth dimming, touch blocking during playback, two-finger double-tap exit, lock-aware countdown, rootful/rootless/RootHide packages." \
             build/packages/*.deb
