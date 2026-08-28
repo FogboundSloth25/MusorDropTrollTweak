@@ -130,14 +130,6 @@ jobs:
           set -euo pipefail
           files=(build/packages/*.deb)
           test "${#files[@]}" -eq 3
-          required=(
-            "Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist"
-            "Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/Info.plist"
-            "Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/MDRootListController"
-            "Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.dylib"
-            "Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.plist"
-            "Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
-          )
           for pkg in "${files[@]}"; do
             echo "=== $(basename "$pkg") ==="
             ls -lh "$pkg"
@@ -155,13 +147,13 @@ jobs:
             tar -xf "$data_tar" -C "$tmp/data"
             test -f "$tmp/control/control"
             test -f "$tmp/data/preinst"
-            for rel in "${required[@]}"; do
-              if [ ! -f "$tmp/data/$rel" ]; then
-                echo "ERROR: missing $rel"
-                find "$tmp/data" -type f | sed "s#^$tmp/data/##" | sort
-                exit 1
-              fi
-            done
+            test -f "$tmp/data/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist"
+            test -f "$tmp/data/Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/Info.plist"
+            test -f "$tmp/data/Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/Root.plist"
+            test -f "$tmp/data/Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/MusorDropTrollTweakPrefs"
+            test -f "$tmp/data/Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.dylib"
+            test -f "$tmp/data/Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.plist"
+            test -f "$tmp/data/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
             echo "Package contents verified."
             rm -rf "$tmp"
           done
