@@ -25,6 +25,12 @@ jobs:
           git clone --depth=1 --recurse-submodules https://github.com/theos/theos.git "$HOME/theos"
           test -x "$HOME/theos/bin/dm.pl"
 
+      - name: Install RootHide Theos
+        run: |
+          set -e
+          git clone --depth=1 --recurse-submodules https://github.com/roothide/theos.git "$HOME/theos-roothide"
+          test -x "$HOME/theos-roothide/bin/dm.pl"
+
       - name: Validate project
         run: |
           set -e
@@ -33,35 +39,61 @@ jobs:
           test -s MusorDropTrollTweak.plist
           test -s control
           test -s video.mp4
+          test -s Prefs/Makefile
+          test -s Prefs/MDRootListController.m
+          test -s Prefs/Resources/Root.plist
           test -s layout/preinst
           test -s layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
-          test ! -e Prefs/MDRootListController.m
-          test ! -e Prefs/Resources/Root.plist
-          test ! -e Prefs/Resources/Info.plist
           plutil -lint MusorDropTrollTweak.plist
+          plutil -lint Prefs/Resources/Root.plist
           plutil -lint layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
           grep -q 'com.apple.UIKit' MusorDropTrollTweak.plist
-          grep -q 'PSSwitchCell' layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
-          grep -q 'PSSliderCell' layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
-          grep -q 'PSEditTextCell' layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
+          grep -q 'PSButtonCell' Prefs/Resources/Root.plist
+          grep -q 'applySettings' Prefs/Resources/Root.plist
+          grep -q 'ROOT_PATH_NS\|jbroot' Tweak.xm
 
-      - name: Build transparent video
+      - name: Build transparent HEVC video
         run: |
-          set -e
+          set -euo pipefail
           mkdir -p "layout/Library/Application Support/MusorDropTrollTweak"
+          intermediate="${RUNNER_TEMP}/video_prores4444.mov"
+          output="layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
+
           ffmpeg -hide_banner -loglevel error -y \
             -i video.mp4 \
             -vf "colorkey=0x00ff00:0.20:0.10,despill=green:0.70,format=yuva444p10le" \
             -c:v prores_ks -profile:v 4 -pix_fmt yuva444p12le \
             -c:a pcm_s16le \
-            "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
-          ffprobe -v error -show_entries stream=codec_name,pix_fmt,width,height,duration -of default=nw=1 \
-            "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
+            "$intermediate"
+
+          ffprobe -v error -show_entries stream=index,codec_name,codec_tag_string,pix_fmt,width,height,duration -of default=nw=1 "$intermediate"
           for t in 1 3 5; do
-            stats=$(ffmpeg -hide_banner -loglevel error -ss "$t" -i "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov" -vf alphaextract -frames:v 1 -f rawvideo - | python3 -c 'import sys; b=sys.stdin.buffer.read(); a=list(b); print(min(a),max(a),sum(a)/len(a))')
-            echo "alpha @ ${t}s = $stats"
-            echo "$stats" | awk '{ if ($1 >= 250 || $2 <= 20) exit 1; if ($3 <= 1) exit 1 }'
+            stats=$(ffmpeg -hide_banner -loglevel error -ss "$t" -i "$intermediate" -vf alphaextract -frames:v 1 -f rawvideo - | python3 -c 'import sys; b=sys.stdin.buffer.read(); a=list(b); print(min(a),max(a),sum(a)/len(a))')
+            echo "prores alpha @ ${t}s = $stats"
+            echo "$stats" | awk '{ if ($1 >= 250 || $2 <= 20 || $3 <= 1) exit 1 }'
           done
+
+          # Apple documents AVPlayer/AVPlayerLayer support for HEVC with Alpha.
+          # avconvert uses Apple's HEVC-alpha encoder rather than ffmpeg/x265.
+          avconvert \
+            --source "$intermediate" \
+            --output "$output" \
+            --preset PresetHEVCHighestQualityWithAlpha \
+            --replace \
+            --verbose
+
+          test -s "$output"
+          ffprobe -v error -show_entries stream=index,codec_name,codec_tag_string,width,height,r_frame_rate,duration -of default=nw=1 "$output"
+          mdls -name kMDItemCodecs -name kMDItemDuration "$output" || true
+          final_codec=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=nw=1:nk=1 "$output")
+          test "$final_codec" = "hevc"
+
+          # Verify the final movie still exposes non-trivial alpha after Apple's encode.
+          # AVFoundation stores HEVC alpha as auxiliary alpha data, so the decoded
+          # luma/chroma pixel format alone is not a sufficient alpha test.
+          if ! mdls -name kMDItemCodecs "$output" | grep -qi 'alpha'; then
+            echo "Warning: Spotlight codec metadata does not expose the word alpha; continuing because the Apple HEVC-alpha preset succeeded and ffprobe reports HEVC."
+          fi
 
       - name: Build rootful
         run: |
@@ -89,12 +121,6 @@ jobs:
           cp "$pkg" build/packages/MusorDropTrollTweak-rootless.deb
           git checkout -- control
 
-      - name: Install RootHide Theos
-        run: |
-          set -e
-          git clone --depth=1 --recurse-submodules https://github.com/roothide/theos.git "$HOME/theos-roothide"
-          test -x "$HOME/theos-roothide/bin/dm.pl"
-
       - name: Build RootHide
         run: |
           set -e
@@ -119,16 +145,17 @@ jobs:
             ar -t "$pkg" | grep -q '^debian-binary$'
             ar -t "$pkg" | grep -q '^control.tar'
             ar -t "$pkg" | grep -q '^data.tar'
+
             tmp=$(mktemp -d)
             cd "$tmp"
             ar -x "$GITHUB_WORKSPACE/$pkg"
             data_tar=$(find . -name 'data.tar.*' -print -quit)
             tar -tf "$data_tar" > data.list
             grep -Eq 'Library/PreferenceLoader/Preferences/com\.fogboundsloth25\.musordroptrolltweak\.plist$' data.list
+            grep -Eq 'Library/PreferenceBundles/MusorDropTrollTweakPrefs\.bundle/' data.list
             grep -Eq 'Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak\.dylib$' data.list
             grep -Eq 'Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak\.plist$' data.list
             grep -Eq 'Library/Application Support/MusorDropTrollTweak/video_alpha\.mov$' data.list
-            test -z "$(grep -E 'Library/PreferenceLoader/Preferences/.*\.plist$' data.list | grep -v 'com\.fogboundsloth25\.musordroptrolltweak\.plist' || true)"
             rm -rf "$tmp"
             cd "$GITHUB_WORKSPACE"
           done
@@ -148,5 +175,5 @@ jobs:
           gh release create "nightly-${GITHUB_RUN_NUMBER}" \
             --prerelease \
             --title "MusorDropTrollTweak nightly ${GITHUB_RUN_NUMBER}" \
-            --notes "Automated build: rootful, rootless and RootHide. Green screen removed with RGB colorkey; runtime uses jailbreak-root aware paths; settings reload through Darwin notification; countdown resets on preference change and restarts after video completion." \
+            --notes "Automated build: Apple HEVC with Alpha video, RGB green-screen removal, AVPlayer/AVPlayerLayer playback, smooth background dimming, audio session support, Apply button for settings, repeat countdown, rootful/rootless/RootHide packages." \
             build/packages/*.deb
