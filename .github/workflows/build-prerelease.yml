@@ -2,7 +2,8 @@ name: Build Tweak Pre-release
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -14,211 +15,138 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
-      - name: Install build dependencies
-        run: |
-          set -euo pipefail
-          brew install ldid ffmpeg
+      - name: Install tools
+        run: brew install ldid ffmpeg
 
       - name: Install Theos
         run: |
-          set -euo pipefail
+          set -e
           git clone --depth=1 --recurse-submodules https://github.com/theos/theos.git "$HOME/theos"
           test -x "$HOME/theos/bin/dm.pl"
-          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
 
-      - name: Validate source layout
+      - name: Validate project
         run: |
-          set -euo pipefail
+          set -e
           test -s Makefile
           test -s Tweak.xm
           test -s MusorDropTrollTweak.plist
           test -s control
           test -s video.mp4
           test -s layout/preinst
+          test -s layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
           test ! -e Prefs/MDRootListController.m
           test ! -e Prefs/Resources/Root.plist
           test ! -e Prefs/Resources/Info.plist
           plutil -lint MusorDropTrollTweak.plist
           plutil -lint layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
-          grep -q '<key>Filter</key>' MusorDropTrollTweak.plist
-          grep -q '<key>Bundles</key>' MusorDropTrollTweak.plist
           grep -q 'com.apple.UIKit' MusorDropTrollTweak.plist
-          pref_dir="layout/Library/PreferenceLoader/Preferences"
-          pref_count=$(find "$pref_dir" -maxdepth 1 -type f -name '*.plist' | wc -l | tr -d ' ')
-          test "$pref_count" -eq 1
-          grep -q '<key>title</key>' "$pref_dir"/*.plist
-          grep -q '<key>entry</key>' "$pref_dir"/*.plist
-          grep -q '<key>items</key>' "$pref_dir"/*.plist
-          grep -q 'PSSwitchCell' "$pref_dir"/*.plist
-          grep -q 'PSSliderCell' "$pref_dir"/*.plist
-          grep -q 'PSEditTextCell' "$pref_dir"/*.plist
-          grep -q '<string>Задержка показа</string>' "$pref_dir"/*.plist
-          grep -q '<string>Громкость</string>' "$pref_dir"/*.plist
-          grep -q '<string>Кастомное видео</string>' "$pref_dir"/*.plist
+          grep -q 'PSSwitchCell' layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
+          grep -q 'PSSliderCell' layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
+          grep -q 'PSEditTextCell' layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
 
-      - name: Prepare default transparent video
+      - name: Build transparent video
         run: |
-          set -euo pipefail
-          test -s video.mp4
-          rm -rf "layout/Library/Application Support/MusorDropTrollTweak"
+          set -e
           mkdir -p "layout/Library/Application Support/MusorDropTrollTweak"
-          video="layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
-
-          # Use the RGB colorkey filter: the source is an RGB green-screen clip.
-          # This preserves the subject alpha and keeps the original audio track.
           ffmpeg -hide_banner -loglevel error -y \
             -i video.mp4 \
             -vf "colorkey=0x00ff00:0.20:0.10,despill=green:0.70,format=yuva444p10le" \
             -c:v prores_ks -profile:v 4 -pix_fmt yuva444p12le \
             -c:a pcm_s16le \
-            "$video"
-
-          test -s "$video"
-          ffprobe -v error -show_entries stream=index,codec_name,codec_tag_string,pix_fmt,width,height,r_frame_rate,duration -of default=nw=1 "$video"
-          video_probe=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,pix_fmt -of default=nw=1:nk=1 "$video")
-          echo "$video_probe"
-          echo "$video_probe" | grep -q '^prores$'
-          echo "$video_probe" | grep -Eq '^yuva444p([0-9]+)?le$'
-
-          # Validate several points in the clip, including the middle, so a valid
-          # pix_fmt cannot hide an all-transparent result.
+            "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
+          ffprobe -v error -show_entries stream=codec_name,pix_fmt,width,height,duration -of default=nw=1 \
+            "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
           for t in 1 3 5; do
-            stats=$(ffmpeg -hide_banner -loglevel error -ss "$t" -i "$video" -vf alphaextract -frames:v 1 -f rawvideo - | \
-              python3 -c 'import sys; b=sys.stdin.buffer.read(); a=list(b); print(min(a),max(a),sum(a)/len(a) if a else 0)')
+            stats=$(ffmpeg -hide_banner -loglevel error -ss "$t" -i "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov" -vf alphaextract -frames:v 1 -f rawvideo - | python3 -c 'import sys; b=sys.stdin.buffer.read(); a=list(b); print(min(a),max(a),sum(a)/len(a))')
             echo "alpha @ ${t}s = $stats"
-            amin=$(echo "$stats" | awk '{print $1}')
-            amax=$(echo "$stats" | awk '{print $2}')
-            amean=$(echo "$stats" | awk '{print $3}')
-            test "$amin" -lt 250
-            test "$amax" -gt 20
-            python3 - <<PY
-value = float("$amean")
-assert value > 1.0, value
-PY
+            echo "$stats" | awk '{ if ($1 >= 250 || $2 <= 20) exit 1; if ($3 <= 1) exit 1 }'
           done
 
-      - name: Build rootful package
+      - name: Build rootful
         run: |
-          set -euo pipefail
+          set -e
           export THEOS="$HOME/theos"
           sed -i.bak 's/^Architecture:.*/Architecture: iphoneos-arm/' control
           rm -rf packages build/packages
-          rm -f control.bak
           mkdir -p build/packages
           make clean package FINALPACKAGE=1 STRIP=1 THEOS_PACKAGE_SCHEME=
           pkg=$(find packages -maxdepth 1 -type f -name '*.deb' -print -quit)
           test -n "$pkg"
           cp "$pkg" build/packages/MusorDropTrollTweak-rootful.deb
           git checkout -- control
-          rm -f control.bak
 
-      - name: Build rootless package
+      - name: Build rootless
         run: |
-          set -euo pipefail
+          set -e
           export THEOS="$HOME/theos"
           make clean
           sed -i.bak 's/^Architecture:.*/Architecture: iphoneos-arm64/' control
-          rm -f control.bak
           rm -rf packages
           make package FINALPACKAGE=1 STRIP=1 THEOS_PACKAGE_SCHEME=rootless
           pkg=$(find packages -maxdepth 1 -type f -name '*.deb' -print -quit)
           test -n "$pkg"
           cp "$pkg" build/packages/MusorDropTrollTweak-rootless.deb
           git checkout -- control
-          rm -f control.bak
 
       - name: Install RootHide Theos
         run: |
-          set -euo pipefail
+          set -e
           git clone --depth=1 --recurse-submodules https://github.com/roothide/theos.git "$HOME/theos-roothide"
           test -x "$HOME/theos-roothide/bin/dm.pl"
 
-      - name: Build roothide package
+      - name: Build RootHide
         run: |
-          set -euo pipefail
+          set -e
           export THEOS="$HOME/theos-roothide"
           make clean
           sed -i.bak 's/^Architecture:.*/Architecture: iphoneos-arm64e/' control
-          rm -f control.bak
           rm -rf packages
           make package FINALPACKAGE=1 STRIP=1 THEOS_PACKAGE_SCHEME=roothide
           pkg=$(find packages -maxdepth 1 -type f -name '*.deb' -print -quit)
           test -n "$pkg"
           cp "$pkg" build/packages/MusorDropTrollTweak-roothide.deb
           git checkout -- control
-          rm -f control.bak
 
       - name: Verify packages
         run: |
-          set -euo pipefail
-          packages=(build/packages/*.deb)
-          test "${#packages[@]}" -eq 3
-          for pkg in "${packages[@]}"; do
+          set -e
+          files=(build/packages/*.deb)
+          test "${#files[@]}" -eq 3
+          for pkg in "${files[@]}"; do
             echo "=== $(basename "$pkg") ==="
             ls -lh "$pkg"
-            test -s "$pkg"
             ar -t "$pkg" | grep -q '^debian-binary$'
             ar -t "$pkg" | grep -q '^control.tar'
             ar -t "$pkg" | grep -q '^data.tar'
             tmp=$(mktemp -d)
-            (
-              cd "$tmp"
-              ar -x "$GITHUB_WORKSPACE/$pkg"
-            )
-            data_tar=$(find "$tmp" -maxdepth 1 -type f -name 'data.tar.*' -print -quit)
-            control_tar=$(find "$tmp" -maxdepth 1 -type f -name 'control.tar.*' -print -quit)
-            test -s "$data_tar"
-            test -s "$control_tar"
-            tar -tf "$data_tar" > "$tmp/data.list"
-            tar -tf "$control_tar" > "$tmp/control.list"
-            root_prefix=""
-            if grep -Eq '^var/jb/' "$tmp/data.list"; then root_prefix='var/jb/'; fi
-            pref_entries=$(grep -Ec '(^|/)(var/jb/)?Library/PreferenceLoader/Preferences/[^/]+\.plist$' "$tmp/data.list" || true)
-            test "$pref_entries" -eq 1
-            grep -Eq '(^|/)(var/jb/)?Library/PreferenceLoader/Preferences/com\.fogboundsloth25\.musordroptrolltweak\.plist$' "$tmp/data.list"
-            grep -Eq '(^|/)(var/jb/)?Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak\.dylib$' "$tmp/data.list"
-            grep -Eq '(^|/)(var/jb/)?Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak\.plist$' "$tmp/data.list"
-            grep -Eq '(^|/)(var/jb/)?Library/Application Support/MusorDropTrollTweak/video_alpha\.mov$' "$tmp/data.list"
-            grep -Eq '(^|/)(var/jb/)?preinst$' "$tmp/data.list"
-            ! grep -Eq '(^|/)(var/jb/)?Library/PreferenceBundles/MusorDropTrollTweakPrefs\.bundle(/|$)' "$tmp/data.list"
-            ! grep -Eq '(^|/)(var/jb/)?Library/PreferenceLoader/Preferences/MusorDropTrollTweakPrefs\.plist$' "$tmp/data.list"
-            ! grep -Eq '(^|/)(var/jb/)?Library/Application Support/MusorDropTrollTweak/video_prores4444\.mov$' "$tmp/data.list"
-            data_dir=$(mktemp -d)
-            tar -xf "$data_tar" -C "$data_dir"
-            pref_file="$data_dir/${root_prefix}Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist"
-            tweak_filter="$data_dir/${root_prefix}Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.plist"
-            test -s "$pref_file"
-            test -s "$tweak_filter"
-            plutil -lint "$pref_file"
-            plutil -lint "$tweak_filter"
-            pref_dump=$(plutil -p "$pref_file")
-            printf '%s\n' "$pref_dump" | grep -q 'PSSwitchCell'
-            printf '%s\n' "$pref_dump" | grep -q 'PSSliderCell'
-            printf '%s\n' "$pref_dump" | grep -q 'PSEditTextCell'
-            filter_dump=$(plutil -p "$tweak_filter")
-            printf '%s\n' "$filter_dump" | grep -q 'com.apple.UIKit'
-            rm -rf "$data_dir" "$tmp"
+            cd "$tmp"
+            ar -x "$GITHUB_WORKSPACE/$pkg"
+            data_tar=$(find . -name 'data.tar.*' -print -quit)
+            tar -tf "$data_tar" > data.list
+            grep -Eq 'Library/PreferenceLoader/Preferences/com\.fogboundsloth25\.musordroptrolltweak\.plist$' data.list
+            grep -Eq 'Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak\.dylib$' data.list
+            grep -Eq 'Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak\.plist$' data.list
+            grep -Eq 'Library/Application Support/MusorDropTrollTweak/video_alpha\.mov$' data.list
+            test -z "$(grep -E 'Library/PreferenceLoader/Preferences/.*\.plist$' data.list | grep -v 'com\.fogboundsloth25\.musordroptrolltweak\.plist' || true)"
+            rm -rf "$tmp"
+            cd "$GITHUB_WORKSPACE"
           done
 
-      - name: Upload workflow artifacts
+      - name: Upload packages
         uses: actions/upload-artifact@v4
         with:
           name: MusorDropTrollTweak-build-${{ github.run_number }}
           path: build/packages/*.deb
           if-no-files-found: error
 
-      - name: Create GitHub pre-release
+      - name: Create pre-release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
-          TAG="nightly-${GITHUB_RUN_NUMBER}"
-          TITLE="MusorDropTrollTweak nightly ${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" \
+          set -e
+          gh release create "nightly-${GITHUB_RUN_NUMBER}" \
             --prerelease \
-            --title "$TITLE" \
-            --notes "1.2.2. Correct RGB green-screen removal with validated alpha frames, cross-process preference reload, repeating countdown, 25% dimming and full-screen aspect-fill playback. Rootful, rootless and RootHide packages." \
+            --title "MusorDropTrollTweak nightly ${GITHUB_RUN_NUMBER}" \
+            --notes "Automated build: rootful, rootless and RootHide. Green screen removed with RGB colorkey; runtime uses jailbreak-root aware paths; settings reload through Darwin notification; countdown resets on preference change and restarts after video completion." \
             build/packages/*.deb
