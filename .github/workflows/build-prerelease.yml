@@ -147,13 +147,19 @@ jobs:
             tar -xf "$data_tar" -C "$tmp/data"
             test -f "$tmp/control/control"
             test -f "$tmp/data/preinst"
-            test -f "$tmp/data/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist"
-            test -f "$tmp/data/Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/Info.plist"
-            test -f "$tmp/data/Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/Root.plist"
-            test -f "$tmp/data/Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/MusorDropTrollTweakPrefs"
-            test -f "$tmp/data/Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.dylib"
-            test -f "$tmp/data/Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.plist"
-            test -f "$tmp/data/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
+            find "$tmp/data" -type f | sed "s#^$tmp/data/##" | sort
+            test "$(find "$tmp/data" -type f -name 'com.fogboundsloth25.musordroptrolltweak.plist' | wc -l | tr -d ' ')" -eq 1
+            test "$(find "$tmp/data" -type f -name 'MusorDropTrollTweakPrefs' | wc -l | tr -d ' ')" -eq 1
+            test "$(find "$tmp/data" -type f -name 'MDRootListController' | wc -l | tr -d ' ')" -eq 0
+            test "$(find "$tmp/data" -type f -name 'MusorDropTrollTweak.dylib' | wc -l | tr -d ' ')" -eq 1
+            test "$(find "$tmp/data" -type f -name 'MusorDropTrollTweak.plist' | wc -l | tr -d ' ')" -eq 1
+            test "$(find "$tmp/data" -type f -name 'video_alpha.mov' | wc -l | tr -d ' ')" -eq 1
+            info=$(find "$tmp/data" -type f -path '*/MusorDropTrollTweakPrefs.bundle/Info.plist' -print -quit)
+            rootplist=$(find "$tmp/data" -type f -path '*/MusorDropTrollTweakPrefs.bundle/Root.plist' -print -quit)
+            test -n "$info"
+            test -n "$rootplist"
+            grep -aFq 'MDRootListController' "$info"
+            grep -aFq 'applySettings' "$rootplist"
             echo "Package contents verified."
             rm -rf "$tmp"
           done
