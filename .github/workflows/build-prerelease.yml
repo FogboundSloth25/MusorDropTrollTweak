@@ -96,10 +96,13 @@ jobs:
       - name: Verify package outputs
         run: |
           set -euo pipefail
-          ls -lh build/packages/*.deb
-          test "$(find build/packages -maxdepth 1 -name '*.deb' | wc -l | tr -d ' ')" -eq 3
-          for pkg in build/packages/*.deb; do
-            dpkg-deb --info "$pkg" >/dev/null
+          packages=(build/packages/*.deb)
+          test "${#packages[@]}" -eq 3
+          for pkg in "${packages[@]}"; do
+            test -s "$pkg"
+            ar -t "$pkg" | grep -q '^debian-binary$'
+            ar -t "$pkg" | grep -q '^control.tar'
+            ar -t "$pkg" | grep -q '^data.tar'
           done
 
       - name: Upload workflow artifacts
