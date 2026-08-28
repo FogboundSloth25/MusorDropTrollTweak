@@ -68,45 +68,33 @@ jobs:
           rm -rf "layout/Library/Application Support/MusorDropTrollTweak"
           mkdir -p "layout/Library/Application Support/MusorDropTrollTweak"
 
-          ffmpeg -hide_banner -encoders > "$RUNNER_TEMP/ffmpeg-encoders.txt"
-          if grep -Fq 'hevc_videotoolbox' "$RUNNER_TEMP/ffmpeg-encoders.txt"; then
-            echo "VideoToolbox HEVC encoder detected; attempting HEVC with Alpha."
-            set +e
-            ffmpeg -hide_banner -loglevel error -y \
-              -i video.mp4 \
-              -vf "chromakey=0x00ff00:0.20:0.10,format=yuva420p" \
-              -c:v hevc_videotoolbox -alpha_quality 0.90 -tag:v hvc1 \
-              -c:a aac -b:a 192k \
-              "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
-            encode_status=$?
-            set -e
-          else
-            echo "VideoToolbox HEVC encoder is unavailable."
-            encode_status=1
-          fi
+          # ProRes 4444 is the deterministic alpha-bearing format for this build.
+          # The chroma key removes the green background while preserving the source audio.
+          ffmpeg -hide_banner -loglevel error -y \
+            -i video.mp4 \
+            -vf "chromakey=0x00ff00:0.20:0.10,format=yuva444p10le" \
+            -c:v prores_ks -profile:v 4 -pix_fmt yuva444p12le \
+            -c:a pcm_s16le \
+            "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
 
-          if [ "$encode_status" -ne 0 ]; then
-            echo "HEVC with Alpha encode failed; using ProRes 4444 alpha fallback."
-            rm -f "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
-            ffmpeg -hide_banner -loglevel error -y \
-              -i video.mp4 \
-              -vf "chromakey=0x00ff00:0.20:0.10,format=yuva444p10le" \
-              -c:v prores_ks -profile:v 4 -pix_fmt yuva444p12le \
-              -c:a pcm_s16le \
-              "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
-          fi
+          video="layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
+          test -s "$video"
+          ffprobe -v error -show_entries stream=index,codec_name,codec_tag_string,pix_fmt,width,height,r_frame_rate,duration -of default=nw=1 "$video"
 
-          test -s "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
-          ffprobe -v error -show_entries stream=index,codec_name,codec_tag_string,pix_fmt,width,height,r_frame_rate -of default=nw=1 "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
-          video_probe=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,pix_fmt,codec_tag_string -of default=nw=1:nk=1 "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov")
+          video_probe=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,pix_fmt -of default=nw=1:nk=1 "$video")
           echo "$video_probe"
-          if echo "$video_probe" | grep -q '^hevc$'; then
-            echo "$video_probe" | grep -q 'hvc1'
-            echo "$video_probe" | grep -q 'yuva420p'
-          else
-            echo "$video_probe" | grep -q '^prores$'
-            echo "$video_probe" | grep -Eq '^yuva444p([0-9]+)?le$'
-          fi
+          echo "$video_probe" | grep -q '^prores$'
+          echo "$video_probe" | grep -Eq '^yuva444p([0-9]+)?le$'
+
+          # Verify that the alpha channel actually contains transparency and is not merely an unused plane.
+          alpha_stats=$(ffmpeg -hide_banner -loglevel error -i "$video" \
+            -vf "alphaextract,format=gray" -frames:v 1 -f rawvideo - | \
+            python3 -c 'import sys; b=sys.stdin.buffer.read(); print(min(b), max(b))')
+          alpha_min=$(printf '%s\n' "$alpha_stats" | awk '{print $1}')
+          alpha_max=$(printf '%s\n' "$alpha_stats" | awk '{print $2}')
+          echo "alpha min=$alpha_min max=$alpha_max"
+          test "$alpha_min" -lt 250
+          test "$alpha_max" -gt 5
 
       - name: Build rootful package
         run: |
@@ -237,5 +225,5 @@ jobs:
           gh release create "$TAG" \
             --prerelease \
             --title "$TITLE" \
-            --notes "1.2.0. Reworked runtime scheduling, cross-process preference reload, repeat countdown, 25% dimming, full-screen aspect-fill video, clearer settings, and HEVC with Alpha delivery when VideoToolbox is available. Rootful, rootless and RootHide packages." \
+            --notes "1.2.0. Deterministic ProRes 4444 alpha video, chroma-keyed green background, cross-process preference reload, repeating countdown, 25% dimming and full-screen aspect-fill playback. Rootful, rootless and RootHide packages." \
             build/packages/*.deb
