@@ -8,7 +8,7 @@
 - (NSArray *)specifiers {
     if (!_specifiers) {
         NSBundle *bundle = [NSBundle bundleForClass:[self class]];
-        _specifiers = [[self loadSpecifiersFromPlistName:@"Root" target:self bundle:bundle] retain];
+        _specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self bundle:bundle];
     }
     return _specifiers;
 }
