@@ -1,10 +1,22 @@
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
+#import <QuartzCore/QuartzCore.h>
+
+#if __has_include(<roothide.h>)
+#import <roothide.h>
+#define MDJBRPath(path) jbroot(path)
+#elif __has_include(<rootless.h>)
 #import <rootless.h>
+#define MDJBRPath(path) ROOT_PATH_NS(path)
+#else
+#define MDJBRPath(path) (path)
+#endif
 
 static CFStringRef const kMDPreferencesDomain = CFSTR("com.fogboundsloth25.musordroptrolltweak");
 static NSString * const kMDPreferencesChanged = @"com.fogboundsloth25.musordroptrolltweak/preferences.changed";
 static NSString * const kMDVideoRelativePath = @"/Library/Application Support/MusorDropTrollTweak/video_alpha.mov";
+static CGFloat const kMDDimAlpha = 0.72;
+static NSTimeInterval const kMDFadeDuration = 0.24;
 
 static NSTimeInterval MDRolloutDelay = 10.0;
 static float MDVolume = 1.0f;
@@ -34,7 +46,7 @@ static NSString *MDNormalizedVideoPath(NSString *path) {
 }
 
 static NSString *MDDefaultVideoPath(void) {
-    NSString *path = ROOT_PATH_NS(kMDVideoRelativePath);
+    NSString *path = MDJBRPath(kMDVideoRelativePath);
     if (path.length && [[NSFileManager defaultManager] fileExistsAtPath:path]) return path;
     return nil;
 }
@@ -79,7 +91,7 @@ static void MDLoadPreferences(void) {
     MDRolloutDelay = [delay isKindOfClass:NSNumber.class] ? MAX(0.0, [delay doubleValue]) : 10.0;
 
     if ([volume isKindOfClass:NSNumber.class]) {
-        CGFloat stored = [volume doubleValue];
+        CGFloat stored = [(NSNumber *)volume doubleValue];
         MDVolume = stored <= 1.0 ? MAX(0.0, MIN(1.0, stored)) : MAX(0.0, MIN(1.0, stored / 100.0));
     } else {
         MDVolume = 1.0f;
@@ -94,11 +106,14 @@ static void MDPlay(void);
 @interface MDOverlayViewController : UIViewController
 @property(nonatomic,strong) AVPlayer *player;
 @property(nonatomic,strong) AVPlayerLayer *playerLayer;
-@property(nonatomic,strong) UIControl *blocker;
+@property(nonatomic,strong) UIView *videoView;
 @property(nonatomic,strong) UIView *dimView;
+@property(nonatomic,strong) UIControl *blocker;
+@property(nonatomic,strong) id statusObserver;
 @property(nonatomic,strong) id endObserver;
 @property(nonatomic,strong) id failedObserver;
 @property(nonatomic,assign) BOOL finishing;
+@property(nonatomic,assign) BOOL readyToStart;
 @end
 
 @implementation MDOverlayViewController
@@ -109,16 +124,28 @@ static void MDPlay(void);
     self.view.opaque = NO;
     self.view.userInteractionEnabled = YES;
 
-    self.playerLayer = [AVPlayerLayer layer];
-    self.playerLayer.frame = self.view.bounds;
-    self.playerLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
-    [self.view.layer addSublayer:self.playerLayer];
-
+    // The dimming layer must be UNDER the video layer. Transparent pixels in the
+    // HEVC-with-alpha movie therefore reveal the dimmed app, while the opaque
+    // parts of the movie stay at full brightness.
     self.dimView = [[UIView alloc] initWithFrame:self.view.bounds];
     self.dimView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    self.dimView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.25];
+    self.dimView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:1.0];
+    self.dimView.alpha = 0.0;
     self.dimView.userInteractionEnabled = NO;
     [self.view addSubview:self.dimView];
+
+    self.videoView = [[UIView alloc] initWithFrame:self.view.bounds];
+    self.videoView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    self.videoView.backgroundColor = UIColor.clearColor;
+    self.videoView.opaque = NO;
+    self.videoView.alpha = 0.0;
+    [self.view addSubview:self.videoView];
+
+    self.playerLayer = [AVPlayerLayer layer];
+    self.playerLayer.frame = self.videoView.bounds;
+    self.playerLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
+    self.playerLayer.backgroundColor = UIColor.clearColor.CGColor;
+    [self.videoView.layer addSublayer:self.playerLayer];
 
     self.blocker = [[UIControl alloc] initWithFrame:self.view.bounds];
     self.blocker.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -130,7 +157,7 @@ static void MDPlay(void);
     if (!path.length || ![[NSFileManager defaultManager] fileExistsAtPath:path]) path = MDDefaultVideoPath();
     if (!path.length) {
         NSLog(@"[MusorDropTrollTweak] video not found: custom=%@ default=%@", MDVideoPath, MDDefaultVideoPath());
-        [self finishWithResult:NO restartTimer:NO];
+        [self finishWithResult:NO restartTimer:YES];
         return;
     }
 
@@ -140,9 +167,14 @@ static void MDPlay(void);
     self.player = [AVPlayer playerWithPlayerItem:item];
     self.player.volume = MDVolume;
     self.player.actionAtItemEnd = AVPlayerActionAtItemEndPause;
+    self.player.automaticallyWaitsToMinimizeStalling = NO;
     self.playerLayer.player = self.player;
 
     __weak typeof(self) weakSelf = self;
+    self.statusObserver = [item observeValueForKeyPath:@"status" options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew context:NULL];
+    // KVO registration is performed below with a dedicated block-compatible helper.
+    [item addObserver:self forKeyPath:@"status" options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew context:NULL];
+
     self.endObserver = [[NSNotificationCenter defaultCenter] addObserverForName:AVPlayerItemDidPlayToEndTimeNotification object:item queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
         [weakSelf finishWithResult:YES restartTimer:YES];
     }];
@@ -153,47 +185,67 @@ static void MDPlay(void);
 
     AVAudioSession *audio = [AVAudioSession sharedInstance];
     NSError *audioError = nil;
-    [audio setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeMoviePlayback options:0 error:&audioError];
+    [audio setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeMoviePlayback options:AVAudioSessionCategoryOptionMixWithOthers error:&audioError];
     if (audioError) NSLog(@"[MusorDropTrollTweak] audio category error: %@", audioError);
     audioError = nil;
     [audio setActive:YES error:&audioError];
     if (audioError) NSLog(@"[MusorDropTrollTweak] audio session error: %@", audioError);
+}
 
-    if (@available(iOS 10.0, *)) {
-        [asset loadValuesAsynchronouslyForKeys:@[@"playable"] completionHandler:^{
-            dispatch_async(dispatch_get_main_queue(), ^{
-                if (weakSelf.finishing) return;
-                NSError *error = nil;
-                AVKeyValueStatus status = [asset statusOfValueForKey:@"playable" error:&error];
-                if (status == AVKeyValueStatusLoaded && asset.playable) {
-                    [weakSelf.player play];
-                } else {
-                    NSLog(@"[MusorDropTrollTweak] asset not playable: status=%ld error=%@", (long)status, error);
-                    [weakSelf finishWithResult:NO restartTimer:YES];
-                }
-            });
-        }];
-    } else {
-        [self.player play];
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSKeyValueChangeKey,id> *)change context:(void *)context {
+    if (![keyPath isEqualToString:@"status"] || object != self.player.currentItem) {
+        [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+        return;
     }
+
+    AVPlayerItemStatus status = self.player.currentItem.status;
+    if (status == AVPlayerItemStatusReadyToPlay) {
+        if (self.readyToStart || self.finishing) return;
+        self.readyToStart = YES;
+        [self startPlaybackWithFade];
+    } else if (status == AVPlayerItemStatusFailed) {
+        NSLog(@"[MusorDropTrollTweak] item failed: %@", self.player.currentItem.error);
+        [self finishWithResult:NO restartTimer:YES];
+    }
+}
+
+- (void)startPlaybackWithFade {
+    if (self.finishing) return;
+    [self.player play];
+    [UIView animateWithDuration:kMDFadeDuration
+                          delay:0.0
+                        options:UIViewAnimationOptionCurveEaseInOut | UIViewAnimationOptionBeginFromCurrentState
+                     animations:^{
+        self.dimView.alpha = kMDDimAlpha;
+        self.videoView.alpha = 1.0;
+    } completion:nil];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    [self.player play];
     [self setNeedsStatusBarAppearanceUpdate];
 }
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
-    self.playerLayer.frame = self.view.bounds;
+    self.playerLayer.frame = self.videoView.bounds;
     self.dimView.frame = self.view.bounds;
+    self.videoView.frame = self.view.bounds;
     self.blocker.frame = self.view.bounds;
 }
 
 - (void)finishWithResult:(BOOL)completed restartTimer:(BOOL)restartTimer {
     if (self.finishing) return;
     self.finishing = YES;
+
+    AVPlayerItem *item = self.player.currentItem;
+    if (item && [item isKindOfClass:AVPlayerItem.class]) {
+        @try {
+            [item removeObserver:self forKeyPath:@"status"];
+        } @catch (__unused NSException *exception) {
+        }
+    }
+
     if (self.endObserver) {
         [[NSNotificationCenter defaultCenter] removeObserver:self.endObserver];
         self.endObserver = nil;
@@ -204,32 +256,47 @@ static void MDPlay(void);
     }
     [self.player pause];
 
-    UIWindow *overlay = MDOverlayWindow;
-    MDOverlayWindow = nil;
-    if (overlay) {
-        overlay.hidden = YES;
-        overlay.rootViewController = nil;
-    }
-    if (MDUnderlyingWindow) {
-        [MDUnderlyingWindow makeKeyAndVisible];
-        MDUnderlyingWindow = nil;
-    }
+    [UIView animateWithDuration:kMDFadeDuration
+                          delay:0.0
+                        options:UIViewAnimationOptionCurveEaseInOut | UIViewAnimationOptionBeginFromCurrentState
+                     animations:^{
+        self.videoView.alpha = 0.0;
+        self.dimView.alpha = 0.0;
+    } completion:^(BOOL finished) {
+        UIWindow *overlay = MDOverlayWindow;
+        MDOverlayWindow = nil;
+        if (overlay) {
+            overlay.hidden = YES;
+            overlay.rootViewController = nil;
+        }
+        if (MDUnderlyingWindow) {
+            [MDUnderlyingWindow makeKeyAndVisible];
+            MDUnderlyingWindow = nil;
+        }
 
-    MDShowing = NO;
-    if (restartTimer && MDEnabled) {
-        MDPendingReschedule = NO;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            MDLoadPreferences();
+        MDShowing = NO;
+        if (restartTimer && MDEnabled) {
+            MDPendingReschedule = NO;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                MDLoadPreferences();
+                MDStartTimer();
+            });
+        } else if (MDPendingReschedule && MDEnabled) {
+            MDPendingReschedule = NO;
             MDStartTimer();
-        });
-    } else if (MDPendingReschedule && MDEnabled) {
-        MDPendingReschedule = NO;
-        MDStartTimer();
-    }
+        }
+    }];
     (void)completed;
 }
 
 - (void)dealloc {
+    AVPlayerItem *item = self.player.currentItem;
+    if (item) {
+        @try {
+            [item removeObserver:self forKeyPath:@"status"];
+        } @catch (__unused NSException *exception) {
+        }
+    }
     if (self.endObserver) [[NSNotificationCenter defaultCenter] removeObserver:self.endObserver];
     if (self.failedObserver) [[NSNotificationCenter defaultCenter] removeObserver:self.failedObserver];
 }
@@ -307,7 +374,8 @@ static void MDPreferencesChanged(void) {
             return;
         }
 
-        // Every preference change restarts the delay from zero.
+        // Apply sends this notification explicitly. The countdown is therefore
+        // changed only when the user taps Apply, not while they drag the sliders.
         if (MDShowing) {
             MDPendingReschedule = YES;
             return;
