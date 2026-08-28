@@ -35,22 +35,27 @@ jobs:
         run: |
           set -e
           test -s Makefile
-          test -s Tweak.xm
+          test -s Runtime.xm
           test -s MusorDropTrollTweak.plist
           test -s control
           test -s video.mp4
           test -s Prefs/Makefile
           test -s Prefs/MDRootListController.m
+          test -s Prefs/Resources/Info.plist
           test -s Prefs/Resources/Root.plist
           test -s layout/preinst
           test -s layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
           plutil -lint MusorDropTrollTweak.plist
+          plutil -lint Prefs/Resources/Info.plist
           plutil -lint Prefs/Resources/Root.plist
           plutil -lint layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
           grep -q 'com.apple.UIKit' MusorDropTrollTweak.plist
           grep -q 'PSButtonCell' Prefs/Resources/Root.plist
           grep -q 'applySettings' Prefs/Resources/Root.plist
-          grep -q 'ROOT_PATH_NS\|jbroot' Tweak.xm
+          grep -q '<key>isController</key>' layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
+          grep -q 'NSPrincipalClass' Prefs/Resources/Info.plist
+          grep -q 'MDRootListController' Prefs/Resources/Info.plist
+          grep -q 'jbroot\|ROOT_PATH_NS' Runtime.xm
 
       - name: Build transparent HEVC video
         run: |
@@ -73,8 +78,6 @@ jobs:
             echo "$stats" | awk '{ if ($1 >= 250 || $2 <= 20 || $3 <= 1) exit 1 }'
           done
 
-          # Apple documents AVPlayer/AVPlayerLayer support for HEVC with Alpha.
-          # avconvert uses Apple's HEVC-alpha encoder rather than ffmpeg/x265.
           avconvert \
             --source "$intermediate" \
             --output "$output" \
@@ -87,13 +90,7 @@ jobs:
           mdls -name kMDItemCodecs -name kMDItemDuration "$output" || true
           final_codec=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=nw=1:nk=1 "$output")
           test "$final_codec" = "hevc"
-
-          # Verify the final movie still exposes non-trivial alpha after Apple's encode.
-          # AVFoundation stores HEVC alpha as auxiliary alpha data, so the decoded
-          # luma/chroma pixel format alone is not a sufficient alpha test.
-          if ! mdls -name kMDItemCodecs "$output" | grep -qi 'alpha'; then
-            echo "Warning: Spotlight codec metadata does not expose the word alpha; continuing because the Apple HEVC-alpha preset succeeded and ffprobe reports HEVC."
-          fi
+          grep -qi 'alpha' < <(mdls -name kMDItemCodecs "$output")
 
       - name: Build rootful
         run: |
@@ -149,10 +146,16 @@ jobs:
             tmp=$(mktemp -d)
             cd "$tmp"
             ar -x "$GITHUB_WORKSPACE/$pkg"
+            control_tar=$(find . -name 'control.tar.*' -print -quit)
             data_tar=$(find . -name 'data.tar.*' -print -quit)
+            tar -tf "$control_tar" > control.list
             tar -tf "$data_tar" > data.list
+            grep -Eq '(^|/)postinst$' control.list || true
+            grep -Eq '(^|/)preinst$' data.list
             grep -Eq 'Library/PreferenceLoader/Preferences/com\.fogboundsloth25\.musordroptrolltweak\.plist$' data.list
-            grep -Eq 'Library/PreferenceBundles/MusorDropTrollTweakPrefs\.bundle/' data.list
+            grep -Eq 'Library/PreferenceBundles/MusorDropTrollTweakPrefs\.bundle/Info\.plist$' data.list
+            grep -Eq 'Library/PreferenceBundles/MusorDropTrollTrollTweakPrefs\.bundle/' data.list || grep -Eq 'Library/PreferenceBundles/MusorDropTrollTweakPrefs\.bundle/' data.list
+            grep -Eq 'Library/PreferenceBundles/MusorDropTrollTweakPrefs\.bundle/MDRootListController' data.list
             grep -Eq 'Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak\.dylib$' data.list
             grep -Eq 'Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak\.plist$' data.list
             grep -Eq 'Library/Application Support/MusorDropTrollTweak/video_alpha\.mov$' data.list
@@ -175,5 +178,5 @@ jobs:
           gh release create "nightly-${GITHUB_RUN_NUMBER}" \
             --prerelease \
             --title "MusorDropTrollTweak nightly ${GITHUB_RUN_NUMBER}" \
-            --notes "Automated build: Apple HEVC with Alpha video, RGB green-screen removal, AVPlayer/AVPlayerLayer playback, smooth background dimming, audio session support, Apply button for settings, repeat countdown, rootful/rootless/RootHide packages." \
+            --notes "Automated build: Apple HEVC with Alpha video, RGB green-screen removal, AVPlayer/AVPlayerLayer playback, smooth background dimming, audio session support, Apply button for settings, lock-aware repeating countdown, rootful/rootless/RootHide packages." \
             build/packages/*.deb
