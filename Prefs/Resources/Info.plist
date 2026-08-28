@@ -10,5 +10,7 @@
     <string>MusorDropTrollTweak</string>
     <key>CFBundlePackageType</key>
     <string>BNDL</string>
+    <key>NSPrincipalClass</key>
+    <string>MDRootListController</string>
 </dict>
 </plist>
