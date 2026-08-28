@@ -19,7 +19,7 @@
             <key>label</key>
             <string>Основное</string>
             <key>footerText</key>
-            <string>Твик запускает видео поверх открытого стороннего приложения. Выключите «Включено», чтобы полностью отключить эффект.</string>
+            <string>Твик запускает встроенное видео поверх открытого стороннего приложения. Выключите «Включено», чтобы отключить автоматический запуск.</string>
         </dict>
         <dict>
             <key>cell</key>
@@ -39,15 +39,13 @@
             <key>cell</key>
             <string>PSGroupCell</string>
             <key>label</key>
-            <string>Задержка</string>
+            <string>Задержка показа</string>
             <key>footerText</key>
-            <string>Сколько секунд ждать после запуска/возврата приложения до показа видео. При изменении значения текущий отсчёт сбрасывается и начинается заново.</string>
+            <string>Сколько секунд ждать после того, как приложение стало активным. При изменении задержки текущий таймер отменяется и новый отсчёт начинается сразу.</string>
         </dict>
         <dict>
             <key>cell</key>
             <string>PSSliderCell</string>
-            <key>label</key>
-            <string>Секунды</string>
             <key>key</key>
             <string>delay</string>
             <key>default</key>
@@ -71,23 +69,21 @@
             <key>cell</key>
             <string>PSGroupCell</string>
             <key>label</key>
-            <string>Звук</string>
+            <string>Громкость</string>
             <key>footerText</key>
-            <string>Громкость аудиодорожки видео: 0% — без звука, 100% — исходная громкость.</string>
+            <string>Громкость встроенной аудиодорожки: 0% — без звука, 100% — полная громкость.</string>
         </dict>
         <dict>
             <key>cell</key>
             <string>PSSliderCell</string>
-            <key>label</key>
-            <string>Громкость (%)</string>
             <key>key</key>
             <string>volume</string>
             <key>default</key>
-            <real>1.0</real>
+            <real>100.0</real>
             <key>min</key>
             <real>0.0</real>
             <key>max</key>
-            <real>1.0</real>
+            <real>100.0</real>
             <key>showValue</key>
             <true/>
             <key>isSegmented</key>
@@ -103,15 +99,15 @@
             <key>cell</key>
             <string>PSGroupCell</string>
             <key>label</key>
-            <string>Видео</string>
+            <string>Кастомное видео</string>
             <key>footerText</key>
-            <string>Оставьте поле пустым, чтобы использовать встроенное видео с удалённым зелёным фоном. Для своего файла укажите полный путь к MP4 или MOV на устройстве; пользовательское видео не изменяется.</string>
+            <string>Пустое поле = встроенное видео с удалённым зелёным фоном. Для своего видео укажите полный путь к MP4 или MOV. Кастомный файл не изменяется.</string>
         </dict>
         <dict>
             <key>cell</key>
             <string>PSEditTextCell</string>
             <key>label</key>
-            <string>Кастомное видео</string>
+            <string>Путь к видео</string>
             <key>key</key>
             <string>videoPath</string>
             <key>default</key>
@@ -120,8 +116,6 @@
             <string>/путь/к/видео.mov</string>
             <key>defaults</key>
             <string>com.fogboundsloth25.musordroptrolltweak</string>
-            <key>defaultsWrite</key>
-            <true/>
             <key>PostNotification</key>
             <string>com.fogboundsloth25.musordroptrolltweak/preferences.changed</string>
         </dict>
