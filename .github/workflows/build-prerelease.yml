@@ -38,7 +38,6 @@ jobs:
           test -s control
           test -s video.mp4
           test -s layout/preinst
-
           test ! -e Prefs/MDRootListController.m
           test ! -e Prefs/Resources/Root.plist
           test ! -e Prefs/Resources/Info.plist
@@ -46,9 +45,8 @@ jobs:
           plutil -lint MusorDropTrollTweak.plist
           plutil -lint layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
           grep -q '<key>Filter</key>' MusorDropTrollTweak.plist
-          ! grep -q '<key>Bundles</key>' MusorDropTrollTweak.plist
-          ! grep -q '<key>Executables</key>' MusorDropTrollTweak.plist
-          ! grep -q '<key>Classes</key>' MusorDropTrollTweak.plist
+          grep -q '<key>Bundles</key>' MusorDropTrollTweak.plist
+          grep -q 'com.apple.UIKit' MusorDropTrollTweak.plist
 
           pref_dir="layout/Library/PreferenceLoader/Preferences"
           pref_count=$(find "$pref_dir" -maxdepth 1 -type f -name '*.plist' | wc -l | tr -d ' ')
@@ -186,7 +184,7 @@ jobs:
             grep -q 'PSSwitchCell' "$pref_file"
             grep -q 'PSSliderCell' "$pref_file"
             grep -q 'PSEditTextCell' "$pref_file"
-            grep -q '<dict/>' "$tweak_filter"
+            grep -q 'com.apple.UIKit' "$tweak_filter"
             test ! -e "$data_dir/${root_prefix}Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/Info.plist"
 
             rm -rf "$data_dir" "$tmp"
@@ -210,5 +208,5 @@ jobs:
           gh release create "$TAG" \
             --prerelease \
             --title "$TITLE" \
-            --notes "1.1.0 rebuild. PreferenceBundle removed; settings are now provided directly by the standard PreferenceLoader extended entry. Old PreferenceBundle/filter artifacts are removed by preinst. Packages: rootful, rootless and RootHide." \
+            --notes "1.1.0 rebuild. PreferenceBundle removed; settings are now provided directly by the standard PreferenceLoader extended entry. Injection uses the documented com.apple.UIKit filter and the constructor excludes Apple/system bundles. Old PreferenceBundle/filter artifacts are removed by preinst." \
             build/packages/*.deb
