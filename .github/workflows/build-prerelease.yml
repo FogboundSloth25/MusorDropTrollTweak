@@ -42,22 +42,20 @@ jobs:
           test -s "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
 
       - name: Build rootful package
-        env:
-          THEOS: ${{ github.workspace }}/../theos
         run: |
           set -euo pipefail
+          export THEOS="$HOME/theos"
           sed -i.bak 's/^Architecture:.*/Architecture: iphoneos-arm/' control
-          rm -rf packages
-          make clean package FINALPACKAGE=1 STRIP=1 THEOS_PACKAGE_SCHEME=
+          rm -rf packages build/packages
           mkdir -p build/packages
+          make clean package FINALPACKAGE=1 STRIP=1 THEOS_PACKAGE_SCHEME=
           cp packages/*.deb build/packages/MusorDropTrollTweak-rootful.deb
           git checkout -- control
 
       - name: Build rootless package
-        env:
-          THEOS: ${{ github.workspace }}/../theos
         run: |
           set -euo pipefail
+          export THEOS="$HOME/theos"
           make clean
           sed -i.bak 's/^Architecture:.*/Architecture: iphoneos-arm64/' control
           make package FINALPACKAGE=1 STRIP=1 THEOS_PACKAGE_SCHEME=rootless
@@ -71,10 +69,9 @@ jobs:
           test -x "$HOME/theos-roothide/bin/dm.pl"
 
       - name: Build roothide package
-        env:
-          THEOS: ${{ github.workspace }}/../theos-roothide
         run: |
           set -euo pipefail
+          export THEOS="$HOME/theos-roothide"
           make clean
           sed -i.bak 's/^Architecture:.*/Architecture: iphoneos-arm64e/' control
           make package FINALPACKAGE=1 STRIP=1 THEOS_PACKAGE_SCHEME=roothide
