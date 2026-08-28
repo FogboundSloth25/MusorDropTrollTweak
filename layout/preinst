@@ -1,17 +1,18 @@
 #!/bin/bash
 set -eu
 
-# Remove files from older builds that can create duplicate Settings entries
-# or keep an obsolete injection filter active on the device.
+# Remove artifacts left by older builds before the new payload is unpacked.
+# This is intentionally idempotent and covers both rootful and rootless layouts.
 for path in \
     /Library/PreferenceLoader/Preferences/MusorDropTrollTweakPrefs.plist \
+    /Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle \
     /Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.plist \
     /var/jb/Library/PreferenceLoader/Preferences/MusorDropTrollTweakPrefs.plist \
+    /var/jb/Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle \
     /var/jb/Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.plist
-
-do
-    if [ -e "$path" ]; then
-        rm -f "$path"
+ do
+    if [ -e "$path" ] || [ -L "$path" ]; then
+        rm -rf "$path"
     fi
 done
 
