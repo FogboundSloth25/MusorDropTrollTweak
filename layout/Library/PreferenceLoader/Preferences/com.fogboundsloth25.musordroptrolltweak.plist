@@ -10,6 +10,8 @@
         <string>MusorDropTrollTweak</string>
         <key>bundle</key>
         <string>MusorDropTrollTweakPrefs</string>
+        <key>isController</key>
+        <true/>
     </dict>
 </dict>
 </plist>
