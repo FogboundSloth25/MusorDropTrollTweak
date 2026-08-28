@@ -161,13 +161,18 @@ jobs:
             tar -tf "$data_tar" > "$tmp/data.list"
             tar -tf "$control_tar" > "$tmp/control.list"
 
+            echo "=== DATA: $pkg ==="
+            cat "$tmp/data.list"
+            echo "=== CONTROL: $pkg ==="
+            cat "$tmp/control.list"
+
             pref_entries=$(grep -Ec '(^|/)Library/PreferenceLoader/Preferences/[^/]+\.plist$' "$tmp/data.list" || true)
             test "$pref_entries" -eq 1
             grep -Eq '(^|/)Library/PreferenceLoader/Preferences/com\.fogboundsloth25\.musordroptrolltweak\.plist$' "$tmp/data.list"
             grep -Eq '(^|/)Library/PreferenceBundles/MusorDropTrollTweakPrefs\.bundle(/|$)' "$tmp/data.list"
             grep -Eq '(^|/)MusorDropTrollTweak\.dylib$' "$tmp/data.list"
             grep -Eq '(^|/)video_alpha\.mov$' "$tmp/data.list"
-            grep -Fxq 'preinst' "$tmp/control.list"
+            grep -Eq '(^|/)preinst$' "$tmp/control.list"
             grep -Eq '(^|/)MusorDropTrollTweak\.plist$' "$tmp/data.list"
             rm -rf "$tmp"
           done
