@@ -161,24 +161,29 @@ jobs:
             echo "=== CONTROL: $pkg ==="
             cat "$tmp/control.list"
 
-            pref_entries=$(grep -Ec '(^|/)Library/PreferenceLoader/Preferences/[^/]+\.plist$' "$tmp/data.list" || true)
+            root_prefix=""
+            if grep -Eq '^var/jb/' "$tmp/data.list"; then
+              root_prefix='var/jb/'
+            fi
+
+            pref_entries=$(grep -Ec '(^|/)(var/jb/)?Library/PreferenceLoader/Preferences/[^/]+\.plist$' "$tmp/data.list" || true)
             test "$pref_entries" -eq 1
-            grep -Eq '(^|/)Library/PreferenceLoader/Preferences/com\.fogboundsloth25\.musordroptrolltweak\.plist$' "$tmp/data.list"
-            grep -Eq '(^|/)Library/PreferenceBundles/MusorDropTrollTweakPrefs\.bundle(/|$)' "$tmp/data.list"
-            grep -Eq '(^|/)MusorDropTrollTweak\.dylib$' "$tmp/data.list"
-            grep -Eq '(^|/)video_alpha\.mov$' "$tmp/data.list"
-            grep -Eq '(^|/)preinst$' "$tmp/data.list"
-            grep -Eq '(^|/)MusorDropTrollTweak\.plist$' "$tmp/data.list"
-            ! grep -Eq '(^|/)video_prores4444\.mov$' "$tmp/data.list"
-            ! grep -Eq '(^|/)MusorDropTrollTweakPrefs\.plist$' "$tmp/data.list"
+            grep -Eq '(^|/)(var/jb/)?Library/PreferenceLoader/Preferences/com\.fogboundsloth25\.musordroptrolltweak\.plist$' "$tmp/data.list"
+            grep -Eq '(^|/)(var/jb/)?Library/PreferenceBundles/MusorDropTrollTweakPrefs\.bundle(/|$)' "$tmp/data.list"
+            grep -Eq '(^|/)(var/jb/)?Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak\.dylib$' "$tmp/data.list"
+            grep -Eq '(^|/)(var/jb/)?Library/Application Support/MusorDropTrollTweak/video_alpha\.mov$' "$tmp/data.list"
+            grep -Eq '(^|/)(var/jb/)?preinst$' "$tmp/data.list"
+            grep -Eq '(^|/)(var/jb/)?Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak\.plist$' "$tmp/data.list"
+            ! grep -Eq '(^|/)(var/jb/)?Library/Application Support/MusorDropTrollTweak/video_prores4444\.mov$' "$tmp/data.list"
+            ! grep -Eq '(^|/)(var/jb/)?Library/PreferenceLoader/Preferences/MusorDropTrollTweakPrefs\.plist$' "$tmp/data.list"
 
             data_dir=$(mktemp -d)
             tar -xf "$data_tar" -C "$data_dir"
-            test -s "$data_dir/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist"
-            test -s "$data_dir/Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/Root.plist"
-            test -s "$data_dir/Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.dylib"
-            test -s "$data_dir/Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.plist"
-            test -s "$data_dir/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
+            test -s "$data_dir/${root_prefix}Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist"
+            test -s "$data_dir/${root_prefix}Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/Root.plist"
+            test -s "$data_dir/${root_prefix}Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.dylib"
+            test -s "$data_dir/${root_prefix}Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.plist"
+            test -s "$data_dir/${root_prefix}Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
             rm -rf "$data_dir" "$tmp"
             trap - EXIT
           done
