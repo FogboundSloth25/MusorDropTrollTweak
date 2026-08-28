@@ -10,3 +10,6 @@ MusorDropTrollTweak_FRAMEWORKS := UIKit AVFoundation
 MusorDropTrollTweak_INSTALL_PATH := /Library/MobileSubstrate/DynamicLibraries
 
 include $(THEOS_MAKE_PATH)/tweak.mk
+
+SUBPROJECTS += Prefs
+include $(THEOS_MAKE_PATH)/aggregate.mk
