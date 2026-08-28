@@ -64,27 +64,18 @@ jobs:
           mkdir -p "layout/Library/Application Support/MusorDropTrollTweak"
           intermediate="${RUNNER_TEMP}/video_prores4444.mov"
           output="layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
-
           ffmpeg -hide_banner -loglevel error -y \
             -i video.mp4 \
             -vf "colorkey=0x00ff00:0.20:0.10,despill=green:0.70,format=yuva444p10le" \
             -c:v prores_ks -profile:v 4 -pix_fmt yuva444p12le \
             -c:a pcm_s16le "$intermediate"
-
           ffprobe -v error -show_entries stream=index,codec_name,codec_tag_string,pix_fmt,width,height,duration -of default=nw=1 "$intermediate"
           for t in 1 3 5; do
             stats=$(ffmpeg -hide_banner -loglevel error -ss "$t" -i "$intermediate" -vf alphaextract -frames:v 1 -f rawvideo - | python3 -c 'import sys; b=sys.stdin.buffer.read(); a=list(b); print(min(a),max(a),sum(a)/len(a))')
             echo "prores alpha @ ${t}s = $stats"
             echo "$stats" | awk '{ if ($1 >= 250 || $2 <= 20 || $3 <= 1) exit 1 }'
           done
-
-          avconvert \
-            --source "$intermediate" \
-            --output "$output" \
-            --preset PresetHEVCHighestQualityWithAlpha \
-            --replace \
-            --verbose
-
+          avconvert --source "$intermediate" --output "$output" --preset PresetHEVCHighestQualityWithAlpha --replace --verbose
           test -s "$output"
           final_video=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,codec_tag_string,width,height,r_frame_rate,duration -of default=nw=1 "$output")
           echo "$final_video"
@@ -145,18 +136,18 @@ jobs:
             ar -t "$pkg" | grep -q '^debian-binary$'
             ar -t "$pkg" | grep -q '^control.tar'
             ar -t "$pkg" | grep -q '^data.tar'
-
             tmp=$(mktemp -d)
-            ar -x "$GITHUB_WORKSPACE/$pkg" -C "$tmp"
+            (
+              cd "$tmp"
+              ar -x "$GITHUB_WORKSPACE/$pkg"
+            )
             control_tar=$(find "$tmp" -name 'control.tar.*' -print -quit)
             data_tar=$(find "$tmp" -name 'data.tar.*' -print -quit)
             test -n "$control_tar"
             test -n "$data_tar"
-
             mkdir -p "$tmp/control" "$tmp/data"
             tar -xf "$control_tar" -C "$tmp/control"
             tar -xf "$data_tar" -C "$tmp/data"
-
             test -f "$tmp/control/control"
             test -f "$tmp/data/preinst"
             test -f "$tmp/data/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist"
@@ -165,7 +156,6 @@ jobs:
             test -f "$tmp/data/Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.dylib"
             test -f "$tmp/data/Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.plist"
             test -f "$tmp/data/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
-
             echo "Package contents verified."
             rm -rf "$tmp"
           done
