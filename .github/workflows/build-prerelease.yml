@@ -165,8 +165,10 @@ jobs:
             test -n "$rootplist"
             plutil -lint "$info"
             plutil -lint "$rootplist"
-            grep -aFq 'MDRootListController' "$info"
-            grep -aFq 'applySettings' "$rootplist"
+            info_xml=$(plutil -convert xml1 -o - "$info")
+            root_xml=$(plutil -convert xml1 -o - "$rootplist")
+            printf '%s\n' "$info_xml" | grep -Fq '<string>MDRootListController</string>'
+            printf '%s\n' "$root_xml" | grep -Fq 'applySettings'
             rm -rf "$tmp"
             trap - EXIT
             echo "Package contents verified."
