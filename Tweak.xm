@@ -3,7 +3,7 @@
 
 static NSTimeInterval MDRolloutDelay = 10.0;
 static BOOL MDEnabled = YES;
-static BOOL MDMuted = NO;
+static BOOL MDMute = NO;
 static NSString *MDVideoPath = nil;
 
 @interface MDOverlayViewController : UIViewController
@@ -15,7 +15,6 @@ static NSString *MDVideoPath = nil;
 @end
 
 @implementation MDOverlayViewController
-
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = UIColor.clearColor;
@@ -32,20 +31,17 @@ static NSString *MDVideoPath = nil;
     [self.view addSubview:self.blocker];
 
     NSString *path = MDVideoPath;
-    if (!path.length) {
+    if (!path.length) path = @"/Library/Application Support/MusorDropTrollTweak/video_alpha.mov";
+    if (![[NSFileManager defaultManager] fileExistsAtPath:path]) {
         path = [[NSBundle bundleForClass:self.class] pathForResource:@"video_alpha" ofType:@"mov"];
     }
-    if (!path.length) {
+    if (!path.length || ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
         path = [[NSBundle mainBundle] pathForResource:@"video" ofType:@"mp4"];
     }
-    if (!path.length) {
-        [self finish];
-        return;
-    }
+    if (!path.length) { [self finish]; return; }
 
-    NSURL *url = [NSURL fileURLWithPath:path];
-    self.player = [AVPlayer playerWithURL:url];
-    self.player.volume = MDMute d ? 0.0 : 1.0;
+    self.player = [AVPlayer playerWithURL:[NSURL fileURLWithPath:path]];
+    self.player.volume = MDMute ? 0.0 : 1.0;
     self.playerLayer = [AVPlayerLayer playerLayerWithPlayer:self.player];
     self.playerLayer.videoGravity = AVLayerVideoGravityResizeAspect;
     self.playerLayer.frame = self.view.bounds;
@@ -88,20 +84,15 @@ static UIViewController *MDTopViewController(UIViewController *root) {
 }
 
 static void MDPlay(void) {
-    if (!MDEnabled) return;
+    if (!MDEnabled || !UIApplication.sharedApplication) return;
     dispatch_async(dispatch_get_main_queue(), ^{
         UIWindow *window = nil;
         for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-            if (scene.activationState == UISceneActivationStateForegroundActive && [scene.delegate respondsToSelector:@selector(window)]) {
-                window = [scene.delegate window];
-                if (window) break;
+            if (![scene isKindOfClass:UIWindowScene.class]) continue;
+            for (UIWindow *candidate in ((UIWindowScene *)scene).windows) {
+                if (candidate.isKeyWindow) { window = candidate; break; }
             }
-            if ([scene isKindOfClass:UIWindowScene.class]) {
-                for (UIWindow *candidate in ((UIWindowScene *)scene).windows) {
-                    if (candidate.isKeyWindow) { window = candidate; break; }
-                }
-                if (window) break;
-            }
+            if (window) break;
         }
         if (!window) return;
         UIViewController *top = MDTopViewController(window.rootViewController);
@@ -114,22 +105,32 @@ static void MDPlay(void) {
 }
 
 static void MDLoadPreferences(void) {
-    NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.fogboundsloth25.musordroptrolltweak.plist"];
-    if (![prefs isKindOfClass:NSDictionary.class]) return;
+    NSArray *paths = @[
+        @"/var/mobile/Library/Preferences/com.fogboundsloth25.musordroptrolltweak.plist",
+        @"/var/jb/var/mobile/Library/Preferences/com.fogboundsloth25.musordroptrolltweak.plist"
+    ];
+    NSDictionary *prefs = nil;
+    for (NSString *path in paths) {
+        NSDictionary *candidate = [NSDictionary dictionaryWithContentsOfFile:path];
+        if ([candidate isKindOfClass:NSDictionary.class]) { prefs = candidate; break; }
+    }
+    if (!prefs) return;
     NSNumber *enabled = prefs[@"enabled"];
     NSNumber *delay = prefs[@"delay"];
     NSNumber *muted = prefs[@"muted"];
     NSString *video = prefs[@"videoPath"];
     if (enabled) MDEnabled = enabled.boolValue;
     if (delay) MDRolloutDelay = MAX(0.0, delay.doubleValue);
-    if (muted) MDMute d = muted.boolValue;
+    if (muted) MDMute = muted.boolValue;
     if ([video isKindOfClass:NSString.class] && video.length) MDVideoPath = [video copy];
 }
 
 %ctor {
-    MDLoadPreferences();
-    if (!MDEnabled) return;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(MDRolloutDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        MDPlay();
-    });
+    if (![[NSBundle mainBundle].bundleIdentifier hasPrefix:@"com.apple."]) {
+        MDLoadPreferences();
+        if (!MDEnabled) return;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(MDRolloutDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            MDPlay();
+        });
+    }
 }
