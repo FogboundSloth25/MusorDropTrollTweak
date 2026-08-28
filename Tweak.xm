@@ -1,14 +1,6 @@
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
-#if __has_include(<roothide.h>)
-#import <roothide.h>
-#define MDJBRPath(path) jbroot(path)
-#elif __has_include(<rootless.h>)
 #import <rootless.h>
-#define MDJBRPath(path) ROOT_PATH_NS(path)
-#else
-#define MDJBRPath(path) (path)
-#endif
 
 static CFStringRef const kMDPreferencesDomain = CFSTR("com.fogboundsloth25.musordroptrolltweak");
 static NSString * const kMDPreferencesChanged = @"com.fogboundsloth25.musordroptrolltweak/preferences.changed";
@@ -42,9 +34,8 @@ static NSString *MDNormalizedVideoPath(NSString *path) {
 }
 
 static NSString *MDDefaultVideoPath(void) {
-    NSFileManager *fm = [NSFileManager defaultManager];
-    NSString *path = MDJBRPath(kMDVideoRelativePath);
-    if ([path isKindOfClass:NSString.class] && [fm fileExistsAtPath:path]) return path;
+    NSString *path = ROOT_PATH_NS(kMDVideoRelativePath);
+    if (path.length && [[NSFileManager defaultManager] fileExistsAtPath:path]) return path;
     return nil;
 }
 
@@ -90,7 +81,7 @@ static void MDLoadPreferences(void) {
 
     if ([volume isKindOfClass:NSNumber.class]) {
         CGFloat stored = [volume doubleValue];
-        // Migrate old 0.0-1.0 values while allowing the UI to use 0-100 percent.
+        // Keep compatibility with older releases that stored volume as 0.0-1.0.
         MDVolume = stored <= 1.0 ? MAX(0.0, MIN(1.0, stored)) : MAX(0.0, MIN(1.0, stored / 100.0));
     } else {
         MDVolume = 1.0f;
