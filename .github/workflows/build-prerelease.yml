@@ -14,47 +14,84 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Install build dependencies
         run: |
-          brew update
-          brew install ldid dpkg ffmpeg
+          set -euo pipefail
+          brew install ldid ffmpeg
 
-      - name: Install Theos
+      - name: Install Theos with submodules
         run: |
-          git clone --depth=1 https://github.com/theos/theos.git "$HOME/theos"
+          set -euo pipefail
+          git clone --depth=1 --recurse-submodules https://github.com/theos/theos.git "$HOME/theos"
+          test -x "$HOME/theos/bin/dm.pl"
           echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
 
       - name: Prepare default video with green screen removed
         run: |
           set -euo pipefail
-          test -f video.mp4
-          mkdir -p Resources
+          test -s video.mp4
+          mkdir -p "layout/Library/Application Support/MusorDropTrollTweak"
           ffmpeg -hide_banner -loglevel error -y \
             -i video.mp4 \
             -vf "chromakey=0x00ff00:0.20:0.10,format=yuva444p10le" \
             -c:v prores_ks -profile:v 4 -pix_fmt yuva444p10le \
-            -an Resources/video_alpha.mov
-          test -s Resources/video_alpha.mov
+            -an "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
+          test -s "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
 
-      - name: Build tweak packages
+      - name: Build rootful package
+        env:
+          THEOS: ${{ github.workspace }}/../theos
         run: |
           set -euo pipefail
-          make package FINALPACKAGE=1 STRIP=1
-
-      - name: Collect packages
-        run: |
-          set -euo pipefail
+          sed -i.bak 's/^Architecture:.*/Architecture: iphoneos-arm/' control
+          rm -rf packages
+          make clean package FINALPACKAGE=1 STRIP=1 THEOS_PACKAGE_SCHEME=
           mkdir -p build/packages
-          find . -type f \( -name '*.deb' -o -name '*.pkg' -o -name '*.tipa' \) \
-            -not -path './build/*' -exec cp -v {} build/packages/ \;
-          test -n "$(find build/packages -type f -print -quit)"
+          cp packages/*.deb build/packages/MusorDropTrollTweak-rootful.deb
+          git checkout -- control
 
-      - name: Upload workflow artifact
+      - name: Build rootless package
+        env:
+          THEOS: ${{ github.workspace }}/../theos
+        run: |
+          set -euo pipefail
+          make clean
+          sed -i.bak 's/^Architecture:.*/Architecture: iphoneos-arm64/' control
+          make package FINALPACKAGE=1 STRIP=1 THEOS_PACKAGE_SCHEME=rootless
+          cp packages/*.deb build/packages/MusorDropTrollTweak-rootless.deb
+          git checkout -- control
+
+      - name: Install RootHide Theos
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --recurse-submodules https://github.com/roothide/theos.git "$HOME/theos-roothide"
+          test -x "$HOME/theos-roothide/bin/dm.pl"
+
+      - name: Build roothide package
+        env:
+          THEOS: ${{ github.workspace }}/../theos-roothide
+        run: |
+          set -euo pipefail
+          make clean
+          sed -i.bak 's/^Architecture:.*/Architecture: iphoneos-arm64e/' control
+          make package FINALPACKAGE=1 STRIP=1 THEOS_PACKAGE_SCHEME=roothide
+          cp packages/*.deb build/packages/MusorDropTrollTweak-roothide.deb
+          git checkout -- control
+
+      - name: Verify package outputs
+        run: |
+          set -euo pipefail
+          ls -lh build/packages/*.deb
+          test "$(find build/packages -maxdepth 1 -name '*.deb' | wc -l | tr -d ' ')" -eq 3
+
+      - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
           name: MusorDropTrollTweak-build-${{ github.run_number }}
-          path: build/packages/*
+          path: build/packages/*.deb
           if-no-files-found: error
 
       - name: Create GitHub pre-release
@@ -67,5 +104,5 @@ jobs:
           gh release create "$TAG" \
             --prerelease \
             --title "$TITLE" \
-            --notes "Automatic pre-release build from commit ${GITHUB_SHA}." \
-            build/packages/*
+            --notes "Automatic build from commit ${GITHUB_SHA}. Includes rootful, rootless and RootHide packages. The bundled default video is chroma-keyed to remove the green screen." \
+            build/packages/*.deb
