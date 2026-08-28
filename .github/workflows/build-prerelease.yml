@@ -41,13 +41,11 @@ jobs:
           test ! -e Prefs/MDRootListController.m
           test ! -e Prefs/Resources/Root.plist
           test ! -e Prefs/Resources/Info.plist
-
           plutil -lint MusorDropTrollTweak.plist
           plutil -lint layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
           grep -q '<key>Filter</key>' MusorDropTrollTweak.plist
           grep -q '<key>Bundles</key>' MusorDropTrollTweak.plist
           grep -q 'com.apple.UIKit' MusorDropTrollTweak.plist
-
           pref_dir="layout/Library/PreferenceLoader/Preferences"
           pref_count=$(find "$pref_dir" -maxdepth 1 -type f -name '*.plist' | wc -l | tr -d ' ')
           test "$pref_count" -eq 1
@@ -67,34 +65,38 @@ jobs:
           test -s video.mp4
           rm -rf "layout/Library/Application Support/MusorDropTrollTweak"
           mkdir -p "layout/Library/Application Support/MusorDropTrollTweak"
+          video="layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
 
-          # ProRes 4444 is the deterministic alpha-bearing format for this build.
-          # The chroma key removes the green background while preserving the source audio.
+          # colorkey operates in RGB. This is intentional: the source green screen
+          # is RGB-green and chromakey (YUV) produced an all-zero alpha stream here.
+          # Keep the audio stream unchanged.
           ffmpeg -hide_banner -loglevel error -y \
             -i video.mp4 \
-            -vf "chromakey=0x00ff00:0.20:0.10,format=yuva444p10le" \
+            -vf "colorkey=0x00ff00:0.20:0.10,despill=green:0.70,format=yuva444p10le" \
             -c:v prores_ks -profile:v 4 -pix_fmt yuva444p12le \
             -c:a pcm_s16le \
-            "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
+            "$video"
 
-          video="layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
           test -s "$video"
           ffprobe -v error -show_entries stream=index,codec_name,codec_tag_string,pix_fmt,width,height,r_frame_rate,duration -of default=nw=1 "$video"
-
           video_probe=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,pix_fmt -of default=nw=1:nk=1 "$video")
           echo "$video_probe"
           echo "$video_probe" | grep -q '^prores$'
           echo "$video_probe" | grep -Eq '^yuva444p([0-9]+)?le$'
 
-          # Verify that the alpha channel actually contains transparency and is not merely an unused plane.
-          alpha_stats=$(ffmpeg -hide_banner -loglevel error -i "$video" \
-            -vf "alphaextract,format=gray" -frames:v 1 -f rawvideo - | \
-            python3 -c 'import sys; b=sys.stdin.buffer.read(); print(min(b), max(b))')
-          alpha_min=$(printf '%s\n' "$alpha_stats" | awk '{print $1}')
-          alpha_max=$(printf '%s\n' "$alpha_stats" | awk '{print $2}')
-          echo "alpha min=$alpha_min max=$alpha_max"
-          test "$alpha_min" -lt 250
-          test "$alpha_max" -gt 5
+          # Validate several points in the clip, including the middle, so a valid
+          # pix_fmt cannot hide an all-transparent result.
+          for t in 1 3 5; do
+            stats=$(ffmpeg -hide_banner -loglevel error -ss "$t" -i "$video" -vf alphaextract -frames:v 1 -f rawvideo - | \
+              python3 -c 'import sys; b=sys.stdin.buffer.read(); a=list(b); print(min(a),max(a),sum(a)/len(a) if a else 0)')
+            echo "alpha @ ${t}s = $stats"
+            amin=$(echo "$stats" | awk '{print $1}')
+            amax=$(echo "$stats" | awk '{print $2}')
+            amean=$(echo "$stats" | awk '{print $3}')
+            test "$amin" -lt 250
+            test "$amax" -gt 20
+            test "$amean" -gt 1
+          done
 
       - name: Build rootful package
         run: |
@@ -152,7 +154,6 @@ jobs:
           set -euo pipefail
           packages=(build/packages/*.deb)
           test "${#packages[@]}" -eq 3
-
           for pkg in "${packages[@]}"; do
             echo "=== $(basename "$pkg") ==="
             ls -lh "$pkg"
@@ -160,24 +161,19 @@ jobs:
             ar -t "$pkg" | grep -q '^debian-binary$'
             ar -t "$pkg" | grep -q '^control.tar'
             ar -t "$pkg" | grep -q '^data.tar'
-
             tmp=$(mktemp -d)
-            trap 'rm -rf "$tmp"' EXIT
             (
               cd "$tmp"
               ar -x "$GITHUB_WORKSPACE/$pkg"
             )
-
             data_tar=$(find "$tmp" -maxdepth 1 -type f -name 'data.tar.*' -print -quit)
             control_tar=$(find "$tmp" -maxdepth 1 -type f -name 'control.tar.*' -print -quit)
             test -s "$data_tar"
             test -s "$control_tar"
             tar -tf "$data_tar" > "$tmp/data.list"
             tar -tf "$control_tar" > "$tmp/control.list"
-
             root_prefix=""
             if grep -Eq '^var/jb/' "$tmp/data.list"; then root_prefix='var/jb/'; fi
-
             pref_entries=$(grep -Ec '(^|/)(var/jb/)?Library/PreferenceLoader/Preferences/[^/]+\.plist$' "$tmp/data.list" || true)
             test "$pref_entries" -eq 1
             grep -Eq '(^|/)(var/jb/)?Library/PreferenceLoader/Preferences/com\.fogboundsloth25\.musordroptrolltweak\.plist$' "$tmp/data.list"
@@ -185,11 +181,9 @@ jobs:
             grep -Eq '(^|/)(var/jb/)?Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak\.plist$' "$tmp/data.list"
             grep -Eq '(^|/)(var/jb/)?Library/Application Support/MusorDropTrollTweak/video_alpha\.mov$' "$tmp/data.list"
             grep -Eq '(^|/)(var/jb/)?preinst$' "$tmp/data.list"
-
             ! grep -Eq '(^|/)(var/jb/)?Library/PreferenceBundles/MusorDropTrollTweakPrefs\.bundle(/|$)' "$tmp/data.list"
             ! grep -Eq '(^|/)(var/jb/)?Library/PreferenceLoader/Preferences/MusorDropTrollTweakPrefs\.plist$' "$tmp/data.list"
             ! grep -Eq '(^|/)(var/jb/)?Library/Application Support/MusorDropTrollTweak/video_prores4444\.mov$' "$tmp/data.list"
-
             data_dir=$(mktemp -d)
             tar -xf "$data_tar" -C "$data_dir"
             pref_file="$data_dir/${root_prefix}Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist"
@@ -205,7 +199,6 @@ jobs:
             filter_dump=$(plutil -p "$tweak_filter")
             printf '%s\n' "$filter_dump" | grep -q 'com.apple.UIKit'
             rm -rf "$data_dir" "$tmp"
-            trap - EXIT
           done
 
       - name: Upload workflow artifacts
@@ -225,5 +218,5 @@ jobs:
           gh release create "$TAG" \
             --prerelease \
             --title "$TITLE" \
-            --notes "1.2.0. Deterministic ProRes 4444 alpha video, chroma-keyed green background, cross-process preference reload, repeating countdown, 25% dimming and full-screen aspect-fill playback. Rootful, rootless and RootHide packages." \
+            --notes "1.2.1. Fixed RGB green-screen removal with ProRes 4444 alpha, cross-process preference reload, repeating countdown, 25% dimming and full-screen aspect-fill playback. Rootful, rootless and RootHide packages." \
             build/packages/*.deb
