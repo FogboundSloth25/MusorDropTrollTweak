@@ -53,8 +53,7 @@ jobs:
           grep -Fq 'com.apple.springboard' Runtime.xm
           grep -Fq 'PSButtonCell' Prefs/Resources/Root.plist
           grep -Fq 'applySettings' Prefs/Resources/Root.plist
-          grep -Fq '<key>isController</key>' layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltrolltweak.plist || grep -Fq '<key>isController</key>' layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
-          grep -Fq '<key>isController</key>' layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist || true
+          grep -Fq '<key>isController</key>' layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
           grep -Fq 'NSPrincipalClass' Prefs/Resources/Info.plist
           grep -Fq 'MDRootListController' Prefs/Resources/Info.plist
           grep -Eq 'jbroot|ROOT_PATH_NS' Runtime.xm
@@ -154,13 +153,12 @@ jobs:
             mkdir -p "$tmp/control" "$tmp/data"
             tar -xf "$control_tar" -C "$tmp/control"
             tar -xf "$data_tar" -C "$tmp/data"
-            echo "--- extracted package paths ---"
-            find "$tmp/data" -type f | sed "s#^$tmp/data/##" | sort
             test -f "$tmp/control/control"
             test -f "$tmp/data/preinst"
             for rel in "${required[@]}"; do
               if [ ! -f "$tmp/data/$rel" ]; then
                 echo "ERROR: missing $rel"
+                find "$tmp/data" -type f | sed "s#^$tmp/data/##" | sort
                 exit 1
               fi
             done
