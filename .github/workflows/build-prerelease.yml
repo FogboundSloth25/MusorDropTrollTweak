@@ -68,17 +68,26 @@ jobs:
           rm -rf "layout/Library/Application Support/MusorDropTrollTweak"
           mkdir -p "layout/Library/Application Support/MusorDropTrollTweak"
 
-          # Apple documents HEVC with Alpha as an AVPlayer/AVPlayerLayer delivery
-          # format. On macOS runners use VideoToolbox instead of libx265.
-          if ffmpeg -hide_banner -encoders 2>/dev/null | grep -q 'hevc_videotoolbox'; then
+          ffmpeg -hide_banner -encoders > "$RUNNER_TEMP/ffmpeg-encoders.txt"
+          if grep -Fq 'hevc_videotoolbox' "$RUNNER_TEMP/ffmpeg-encoders.txt"; then
+            echo "VideoToolbox HEVC encoder detected; attempting HEVC with Alpha."
+            set +e
             ffmpeg -hide_banner -loglevel error -y \
               -i video.mp4 \
               -vf "chromakey=0x00ff00:0.20:0.10,format=yuva420p" \
               -c:v hevc_videotoolbox -alpha_quality 0.90 -tag:v hvc1 \
               -c:a aac -b:a 192k \
               "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
+            encode_status=$?
+            set -e
           else
-            echo "VideoToolbox HEVC encoder unavailable; using ProRes 4444 fallback."
+            echo "VideoToolbox HEVC encoder is unavailable."
+            encode_status=1
+          fi
+
+          if [ "$encode_status" -ne 0 ]; then
+            echo "HEVC with Alpha encode failed; using ProRes 4444 alpha fallback."
+            rm -f "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
             ffmpeg -hide_banner -loglevel error -y \
               -i video.mp4 \
               -vf "chromakey=0x00ff00:0.20:0.10,format=yuva444p10le" \
