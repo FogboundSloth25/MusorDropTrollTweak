@@ -6,7 +6,7 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME := MusorDropTrollTweak
 MusorDropTrollTweak_FILES := Tweak.xm
 MusorDropTrollTweak_CFLAGS := -fobjc-arc
-MusorDropTrollTweak_FRAMEWORKS := UIKit AVFoundation MediaPlayer
-MusorDropTrollTweak_PRIVATE_FRAMEWORKS := SpringBoardServices
+MusorDropTrollTweak_FRAMEWORKS := UIKit AVFoundation
+MusorDropTrollTweak_RESOURCE_DIRS := Resources
 
 include $(THEOS_MAKE_PATH)/tweak.mk
