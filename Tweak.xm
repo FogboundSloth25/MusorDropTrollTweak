@@ -81,7 +81,15 @@ static void MDLoadPreferences(void) {
 
     MDEnabled = enabled ? [enabled boolValue] : YES;
     MDRolloutDelay = [delay isKindOfClass:NSNumber.class] ? MAX(0.0, [delay doubleValue]) : 10.0;
-    MDVolume = [volume isKindOfClass:NSNumber.class] ? MAX(0.0f, MIN(1.0f, [volume floatValue])) : 1.0f;
+
+    if ([volume isKindOfClass:NSNumber.class]) {
+        CGFloat stored = [volume doubleValue];
+        // Compatibility with releases that stored volume in the 0.0-1.0 range.
+        MDVolume = stored <= 1.0 ? MAX(0.0, MIN(1.0, stored)) : MAX(0.0, MIN(1.0, stored / 100.0));
+    } else {
+        MDVolume = 1.0f;
+    }
+
     MDVideoPath = ([video isKindOfClass:NSString.class] && [video length] > 0) ? [video copy] : nil;
 }
 
@@ -108,6 +116,11 @@ static void MDPlay(void);
 
     self.playerLayer = nil;
 
+    self.playerLayer = [AVPlayerLayer layer];
+    self.playerLayer.frame = self.view.bounds;
+    self.playerLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
+    [self.view.layer addSublayer:self.playerLayer];
+
     self.dimView = [[UIView alloc] initWithFrame:self.view.bounds];
     self.dimView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     self.dimView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.25];
@@ -124,7 +137,7 @@ static void MDPlay(void);
     if (![path length] || ![[NSFileManager defaultManager] fileExistsAtPath:path]) path = MDDefaultVideoPath();
 
     if (![path length]) {
-        NSLog(@"[MusorDropTrollTweak] no video file found");
+        NSLog(@"[MusorDropTrollTweak] no video file found in configured/default paths");
         [self finishWithResult:NO];
         return;
     }
@@ -135,11 +148,7 @@ static void MDPlay(void);
     self.player = [AVPlayer playerWithPlayerItem:item];
     self.player.volume = MDVolume;
     self.player.actionAtItemEnd = AVPlayerActionAtItemEndPause;
-
-    self.playerLayer = [AVPlayerLayer playerLayerWithPlayer:self.player];
-    self.playerLayer.frame = self.view.bounds;
-    self.playerLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
-    [self.view.layer insertSublayer:self.playerLayer atIndex:0];
+    self.playerLayer.player = self.player;
 
     __weak typeof(self) weakSelf = self;
     self.endObserver = [[NSNotificationCenter defaultCenter] addObserverForName:AVPlayerItemDidPlayToEndTimeNotification object:item queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
@@ -151,6 +160,14 @@ static void MDPlay(void);
     }];
 
     if (@available(iOS 10.0, *)) {
+        AVAudioSession *audio = [AVAudioSession sharedInstance];
+        NSError *audioError = nil;
+        [audio setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeMoviePlayback options:0 error:&audioError];
+        if (audioError) NSLog(@"[MusorDropTrollTweak] audio category error: %@", audioError);
+        audioError = nil;
+        [audio setActive:YES error:&audioError];
+        if (audioError) NSLog(@"[MusorDropTrollTweak] audio session error: %@", audioError);
+
         [asset loadValuesAsynchronouslyForKeys:@[@"playable"] completionHandler:^{
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (weakSelf.finishing) return;
@@ -210,8 +227,6 @@ static void MDPlay(void);
     MDShowing = NO;
     MDTimerScheduled = NO;
 
-    // A completed video always begins a fresh countdown. A preference change during
-    // playback also begins a fresh countdown after the current video is closed.
     if (MDEnabled && (completed || MDPendingReschedule)) {
         MDPendingReschedule = NO;
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -309,26 +324,24 @@ static void MDPreferencesChanged(void) {
             return;
         }
 
-        // Changing the delay resets the countdown from this exact moment.
+        // Any preference change, including delay changes, begins a fresh countdown now.
         MDStartTimer();
     });
 }
 
 static void MDDarwinPreferenceCallback(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        MDPreferencesChanged();
-    });
+    MDPreferencesChanged();
 }
 
 %ctor {
     NSBundle *bundle = [NSBundle mainBundle];
-    NSDictionary *info = bundle.infoDictionary ?: @{};
     NSString *bundleID = bundle.bundleIdentifier ?: @"";
-    NSString *packageType = info[@"CFBundlePackageType"];
 
-    if (![packageType isEqualToString:@"APPL"]) return;
+    // RootHide's App List controls which third-party applications actually receive
+    // injected tweaks. This constructor only runs in processes where the loader
+    // has already injected the dylib.
     if (bundleID.length == 0 || [bundleID hasPrefix:@"com.apple."]) return;
-    if ([bundleID hasSuffix:@".appex"]) return;
+    if ([bundle.bundleURL.pathExtension.lowercaseString isEqualToString:@"appex"]) return;
 
     MDLoadPreferences();
 
@@ -341,8 +354,6 @@ static void MDDarwinPreferenceCallback(CFNotificationCenterRef center, void *obs
         MDCancelTimer();
     }];
 
-    // PreferenceLoader changes originate in Settings.app. Darwin notifications are
-    // cross-process, so a running target app immediately receives preference changes.
     CFNotificationCenterAddObserver(
         CFNotificationCenterGetDarwinNotifyCenter(),
         NULL,
@@ -353,8 +364,6 @@ static void MDDarwinPreferenceCallback(CFNotificationCenterRef center, void *obs
     );
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (MDEnabled && UIApplication.sharedApplication.applicationState == UIApplicationStateActive) {
-            MDStartTimer();
-        }
+        if (MDEnabled && UIApplication.sharedApplication.applicationState == UIApplicationStateActive) MDStartTimer();
     });
 }
