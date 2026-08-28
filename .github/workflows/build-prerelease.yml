@@ -22,29 +22,29 @@ jobs:
           set -euo pipefail
           brew install ldid ffmpeg
 
-      - name: Install Theos with submodules
+      - name: Install Theos
         run: |
           set -euo pipefail
           git clone --depth=1 --recurse-submodules https://github.com/theos/theos.git "$HOME/theos"
           test -x "$HOME/theos/bin/dm.pl"
           echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
 
-      - name: Validate project metadata
+      - name: Validate source layout
         run: |
           set -euo pipefail
           test -s Makefile
           test -s Tweak.xm
           test -s MusorDropTrollTweak.plist
-          test -s Prefs/Resources/Info.plist
-          test -s Prefs/Resources/Root.plist
-          test -s Prefs/MDRootListController.m
           test -s control
           test -s video.mp4
           test -s layout/preinst
 
+          test ! -e Prefs/MDRootListController.m
+          test ! -e Prefs/Resources/Root.plist
+          test ! -e Prefs/Resources/Info.plist
+
           plutil -lint MusorDropTrollTweak.plist
-          plutil -lint Prefs/Resources/Info.plist
-          plutil -lint Prefs/Resources/Root.plist
+          plutil -lint layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
           grep -q '<key>Filter</key>' MusorDropTrollTweak.plist
           ! grep -q '<key>Bundles</key>' MusorDropTrollTweak.plist
           ! grep -q '<key>Executables</key>' MusorDropTrollTweak.plist
@@ -53,14 +53,14 @@ jobs:
           pref_dir="layout/Library/PreferenceLoader/Preferences"
           pref_count=$(find "$pref_dir" -maxdepth 1 -type f -name '*.plist' | wc -l | tr -d ' ')
           test "$pref_count" -eq 1
-          pref_file=$(find "$pref_dir" -maxdepth 1 -type f -name '*.plist' -print -quit)
-          test -n "$pref_file"
-          grep -q '<key>entry</key>' "$pref_file"
-          grep -q '<string>MusorDropTrollTweakPrefs</string>' "$pref_file"
-          grep -q '<string>MusorDropTrollTweak</string>' "$pref_file"
-          plutil -lint "$pref_file"
+          grep -q '<key>title</key>' "$pref_dir"/*.plist
+          grep -q '<key>entry</key>' "$pref_dir"/*.plist
+          grep -q '<key>items</key>' "$pref_dir"/*.plist
+          grep -q 'PSSwitchCell' "$pref_dir"/*.plist
+          grep -q 'PSSliderCell' "$pref_dir"/*.plist
+          grep -q 'PSEditTextCell' "$pref_dir"/*.plist
 
-      - name: Prepare default video with green screen removed
+      - name: Prepare default transparent video
         run: |
           set -euo pipefail
           test -s video.mp4
@@ -69,8 +69,8 @@ jobs:
           ffmpeg -hide_banner -loglevel error -y \
             -i video.mp4 \
             -vf "chromakey=0x00ff00:0.20:0.10,format=yuva444p10le" \
-            -c:v prores_ks -profile:v 4 -pix_fmt yuva444p10le \
-            -c:a aac -b:a 192k \
+            -c:v prores_ks -profile:v 4 -pix_fmt yuva444p12le \
+            -c:a pcm_s16le \
             "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
           test -s "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
           video_probe=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,pix_fmt -of default=nw=1:nk=1 "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov")
@@ -129,13 +129,15 @@ jobs:
           git checkout -- control
           rm -f control.bak
 
-      - name: Verify package outputs and contents
+      - name: Verify packages
         run: |
           set -euo pipefail
           packages=(build/packages/*.deb)
           test "${#packages[@]}" -eq 3
 
           for pkg in "${packages[@]}"; do
+            echo "=== $(basename "$pkg") ==="
+            ls -lh "$pkg"
             test -s "$pkg"
             ar -t "$pkg" | grep -q '^debian-binary$'
             ar -t "$pkg" | grep -q '^control.tar'
@@ -152,14 +154,8 @@ jobs:
             control_tar=$(find "$tmp" -maxdepth 1 -type f -name 'control.tar.*' -print -quit)
             test -s "$data_tar"
             test -s "$control_tar"
-
             tar -tf "$data_tar" > "$tmp/data.list"
             tar -tf "$control_tar" > "$tmp/control.list"
-
-            echo "=== DATA: $pkg ==="
-            cat "$tmp/data.list"
-            echo "=== CONTROL: $pkg ==="
-            cat "$tmp/control.list"
 
             root_prefix=""
             if grep -Eq '^var/jb/' "$tmp/data.list"; then
@@ -169,21 +165,30 @@ jobs:
             pref_entries=$(grep -Ec '(^|/)(var/jb/)?Library/PreferenceLoader/Preferences/[^/]+\.plist$' "$tmp/data.list" || true)
             test "$pref_entries" -eq 1
             grep -Eq '(^|/)(var/jb/)?Library/PreferenceLoader/Preferences/com\.fogboundsloth25\.musordroptrolltweak\.plist$' "$tmp/data.list"
-            grep -Eq '(^|/)(var/jb/)?Library/PreferenceBundles/MusorDropTrollTweakPrefs\.bundle(/|$)' "$tmp/data.list"
             grep -Eq '(^|/)(var/jb/)?Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak\.dylib$' "$tmp/data.list"
+            grep -Eq '(^|/)(var/jb/)?Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak\.plist$' "$tmp/data.list"
             grep -Eq '(^|/)(var/jb/)?Library/Application Support/MusorDropTrollTweak/video_alpha\.mov$' "$tmp/data.list"
             grep -Eq '(^|/)(var/jb/)?preinst$' "$tmp/data.list"
-            grep -Eq '(^|/)(var/jb/)?Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak\.plist$' "$tmp/data.list"
-            ! grep -Eq '(^|/)(var/jb/)?Library/Application Support/MusorDropTrollTweak/video_prores4444\.mov$' "$tmp/data.list"
+
+            ! grep -Eq '(^|/)(var/jb/)?Library/PreferenceBundles/MusorDropTrollTweakPrefs\.bundle(/|$)' "$tmp/data.list"
             ! grep -Eq '(^|/)(var/jb/)?Library/PreferenceLoader/Preferences/MusorDropTrollTweakPrefs\.plist$' "$tmp/data.list"
+            ! grep -Eq '(^|/)(var/jb/)?Library/Application Support/MusorDropTrollTweak/video_prores4444\.mov$' "$tmp/data.list"
 
             data_dir=$(mktemp -d)
             tar -xf "$data_tar" -C "$data_dir"
-            test -s "$data_dir/${root_prefix}Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist"
-            test -s "$data_dir/${root_prefix}Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/Root.plist"
-            test -s "$data_dir/${root_prefix}Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.dylib"
-            test -s "$data_dir/${root_prefix}Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.plist"
-            test -s "$data_dir/${root_prefix}Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
+            pref_file="$data_dir/${root_prefix}Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist"
+            tweak_filter="$data_dir/${root_prefix}Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.plist"
+            test -s "$pref_file"
+            test -s "$tweak_filter"
+            plutil -lint "$pref_file"
+            plutil -lint "$tweak_filter"
+            grep -q '<key>items</key>' "$pref_file"
+            grep -q 'PSSwitchCell' "$pref_file"
+            grep -q 'PSSliderCell' "$pref_file"
+            grep -q 'PSEditTextCell' "$pref_file"
+            grep -q '<dict/>' "$tweak_filter"
+            test ! -e "$data_dir/${root_prefix}Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/Info.plist"
+
             rm -rf "$data_dir" "$tmp"
             trap - EXIT
           done
@@ -205,5 +210,5 @@ jobs:
           gh release create "$TAG" \
             --prerelease \
             --title "$TITLE" \
-            --notes "Automatic build from commit ${GITHUB_SHA}. Includes rootful, rootless and RootHide packages. CI verifies one unrestricted injection filter, exactly one PreferenceLoader entry, upgrade cleanup, runtime dylib, preference bundle, and valid ProRes 4444 alpha video." \
+            --notes "1.1.0 rebuild. PreferenceBundle removed; settings are now provided directly by the standard PreferenceLoader extended entry. Old PreferenceBundle/filter artifacts are removed by preinst. Packages: rootful, rootless and RootHide." \
             build/packages/*.deb
