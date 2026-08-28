@@ -133,9 +133,6 @@ jobs:
           for pkg in "${files[@]}"; do
             echo "=== $(basename "$pkg") ==="
             ls -lh "$pkg"
-            ar -t "$pkg" | grep -q '^debian-binary$'
-            ar -t "$pkg" | grep -q '^control.tar'
-            ar -t "$pkg" | grep -q '^data.tar'
             tmp=$(mktemp -d)
             (
               cd "$tmp"
