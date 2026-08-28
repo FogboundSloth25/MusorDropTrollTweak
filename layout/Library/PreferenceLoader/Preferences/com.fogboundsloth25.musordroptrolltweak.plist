@@ -15,6 +15,14 @@
     <array>
         <dict>
             <key>cell</key>
+            <string>PSGroupCell</string>
+            <key>label</key>
+            <string>Основное</string>
+            <key>footerText</key>
+            <string>Твик запускает видео поверх открытого стороннего приложения. Выключите «Включено», чтобы полностью отключить эффект.</string>
+        </dict>
+        <dict>
+            <key>cell</key>
             <string>PSSwitchCell</string>
             <key>label</key>
             <string>Включено</string>
@@ -29,9 +37,17 @@
         </dict>
         <dict>
             <key>cell</key>
+            <string>PSGroupCell</string>
+            <key>label</key>
+            <string>Задержка</string>
+            <key>footerText</key>
+            <string>Сколько секунд ждать после запуска/возврата приложения до показа видео. При изменении значения текущий отсчёт сбрасывается и начинается заново.</string>
+        </dict>
+        <dict>
+            <key>cell</key>
             <string>PSSliderCell</string>
             <key>label</key>
-            <string>Задержка, сек.</string>
+            <string>Секунды</string>
             <key>key</key>
             <string>delay</string>
             <key>default</key>
@@ -42,6 +58,10 @@
             <real>60.0</real>
             <key>showValue</key>
             <true/>
+            <key>isSegmented</key>
+            <true/>
+            <key>segmentCount</key>
+            <integer>60</integer>
             <key>defaults</key>
             <string>com.fogboundsloth25.musordroptrolltweak</string>
             <key>PostNotification</key>
@@ -49,9 +69,17 @@
         </dict>
         <dict>
             <key>cell</key>
+            <string>PSGroupCell</string>
+            <key>label</key>
+            <string>Звук</string>
+            <key>footerText</key>
+            <string>Громкость аудиодорожки видео: 0% — без звука, 100% — исходная громкость.</string>
+        </dict>
+        <dict>
+            <key>cell</key>
             <string>PSSliderCell</string>
             <key>label</key>
-            <string>Громкость</string>
+            <string>Громкость (%)</string>
             <key>key</key>
             <string>volume</string>
             <key>default</key>
@@ -62,10 +90,22 @@
             <real>1.0</real>
             <key>showValue</key>
             <true/>
+            <key>isSegmented</key>
+            <true/>
+            <key>segmentCount</key>
+            <integer>100</integer>
             <key>defaults</key>
             <string>com.fogboundsloth25.musordroptrolltweak</string>
             <key>PostNotification</key>
             <string>com.fogboundsloth25.musordroptrolltweak/preferences.changed</string>
+        </dict>
+        <dict>
+            <key>cell</key>
+            <string>PSGroupCell</string>
+            <key>label</key>
+            <string>Видео</string>
+            <key>footerText</key>
+            <string>Оставьте поле пустым, чтобы использовать встроенное видео с удалённым зелёным фоном. Для своего файла укажите полный путь к MP4 или MOV на устройстве; пользовательское видео не изменяется.</string>
         </dict>
         <dict>
             <key>cell</key>
@@ -77,9 +117,11 @@
             <key>default</key>
             <string></string>
             <key>placeholder</key>
-            <string>Полный путь к MP4/MOV</string>
+            <string>/путь/к/видео.mov</string>
             <key>defaults</key>
             <string>com.fogboundsloth25.musordroptrolltweak</string>
+            <key>defaultsWrite</key>
+            <true/>
             <key>PostNotification</key>
             <string>com.fogboundsloth25.musordroptrolltweak/preferences.changed</string>
         </dict>
