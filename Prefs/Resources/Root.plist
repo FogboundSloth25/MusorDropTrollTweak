@@ -5,47 +5,78 @@
     <key>PreferenceSpecifiers</key>
     <array>
         <dict>
-            <key>Type</key><string>PSGroupSpecifier</string>
-            <key>Title</key><string>MusorDrop</string>
-            <key>FooterText</key><string>Развлекательный видео-розыгрыш. Используйте только на своём устройстве.</string>
+            <key>Type</key>
+            <string>PSGroupSpecifier</string>
+            <key>Title</key>
+            <string>MusorDrop</string>
+            <key>FooterText</key>
+            <string>Развлекательный видео-розыгрыш. Используйте только на своём устройстве.</string>
         </dict>
         <dict>
-            <key>Type</key><string>PSSwitchSpecifier</string>
-            <key>Title</key><string>Включено</string>
-            <key>Key</key><string>enabled</string>
-            <key>DefaultValue</key><true/>
-            <key>defaults</key><string>com.fogboundsloth25.musordroptrolltweak</string>
+            <key>Type</key>
+            <string>PSSwitchSpecifier</string>
+            <key>Title</key>
+            <string>Включено</string>
+            <key>Key</key>
+            <string>enabled</string>
+            <key>DefaultValue</key>
+            <true/>
+            <key>PostNotification</key>
+            <string>com.fogboundsloth25.musordroptrolltweak/preferences.changed</string>
         </dict>
         <dict>
-            <key>Type</key><string>PSTextFieldSpecifier</string>
-            <key>Title</key><string>Задержка, сек.</string>
-            <key>Key</key><string>delay</string>
-            <key>DefaultValue</key><real>10.0</real>
-            <key>KeyboardType</key><integer>4</integer>
-            <key>AutocorrectionType</key><false/>
-            <key>AutocapitalizationType</key><integer>0</integer>
-            <key>Placeholder</key><string>Например, 10</string>
-            <key>defaults</key><string>com.fogboundsloth25.musordroptrolltweak</string>
+            <key>Type</key>
+            <string>PSSliderSpecifier</string>
+            <key>Title</key>
+            <string>Задержка, сек.</string>
+            <key>Key</key>
+            <string>delay</string>
+            <key>DefaultValue</key>
+            <real>10.0</real>
+            <key>MinimumValue</key>
+            <real>0.0</real>
+            <key>MaximumValue</key>
+            <real>60.0</real>
+            <key>ShowValue</key>
+            <true/>
+            <key>PostNotification</key>
+            <string>com.fogboundsloth25.musordroptrolltweak/preferences.changed</string>
         </dict>
         <dict>
-            <key>Type</key><string>PSSliderSpecifier</string>
-            <key>Title</key><string>Громкость</string>
-            <key>Key</key><string>volume</string>
-            <key>DefaultValue</key><real>1.0</real>
-            <key>MinimumValue</key><real>0.0</real>
-            <key>MaximumValue</key><real>1.0</real>
-            <key>ShowValue</key><true/>
-            <key>defaults</key><string>com.fogboundsloth25.musordroptrolltweak</string>
+            <key>Type</key>
+            <string>PSSliderSpecifier</string>
+            <key>Title</key>
+            <string>Громкость</string>
+            <key>Key</key>
+            <string>volume</string>
+            <key>DefaultValue</key>
+            <real>1.0</real>
+            <key>MinimumValue</key>
+            <real>0.0</real>
+            <key>MaximumValue</key>
+            <real>1.0</real>
+            <key>ShowValue</key>
+            <true/>
+            <key>PostNotification</key>
+            <string>com.fogboundsloth25.musordroptrolltweak/preferences.changed</string>
         </dict>
         <dict>
-            <key>Type</key><string>PSTextFieldSpecifier</string>
-            <key>Title</key><string>Кастомное видео</string>
-            <key>Key</key><string>videoPath</string>
-            <key>DefaultValue</key><string></string>
-            <key>AutocapitalizationType</key><integer>0</integer>
-            <key>AutocorrectionType</key><false/>
-            <key>Placeholder</key><string>Полный путь к MP4/MOV</string>
-            <key>defaults</key><string>com.fogboundsloth25.musordroptrolltweak</string>
+            <key>Type</key>
+            <string>PSTextFieldSpecifier</string>
+            <key>Title</key>
+            <string>Кастомное видео</string>
+            <key>Key</key>
+            <string>videoPath</string>
+            <key>DefaultValue</key>
+            <string></string>
+            <key>AutocapitalizationType</key>
+            <integer>0</integer>
+            <key>AutocorrectionType</key>
+            <false/>
+            <key>Placeholder</key>
+            <string>Полный путь к MP4/MOV</string>
+            <key>PostNotification</key>
+            <string>com.fogboundsloth25.musordroptrolltweak/preferences.changed</string>
         </dict>
     </array>
 </dict>
