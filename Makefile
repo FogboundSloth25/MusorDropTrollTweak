@@ -1,0 +1,12 @@
+TARGET := iphone:clang:latest:15.0
+ARCHS := arm64 arm64e
+
+include $(THEOS)/makefiles/common.mk
+
+TWEAK_NAME := MusorDropTrollTweak
+MusorDropTrollTweak_FILES := Tweak.xm
+MusorDropTrollTweak_CFLAGS := -fobjc-arc
+MusorDropTrollTweak_FRAMEWORKS := UIKit AVFoundation MediaPlayer
+MusorDropTrollTweak_PRIVATE_FRAMEWORKS := SpringBoardServices
+
+include $(THEOS_MAKE_PATH)/tweak.mk
