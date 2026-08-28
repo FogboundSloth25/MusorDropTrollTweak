@@ -15,13 +15,13 @@ static id MDPreference(NSString *key) {
 static NSString *MDDefaultVideoPath(void) {
     NSFileManager *fm = [NSFileManager defaultManager];
     NSArray<NSString *> *paths = @[
-        @"/Library/Application Support/MusorDropTrollTweak/video_alpha.mov",
-        @"/var/jb/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
+        @"/var/jb/Library/Application Support/MusorDropTrollTweak/video_alpha.mov",
+        @"/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
     ];
     for (NSString *path in paths) {
         if ([fm fileExistsAtPath:path]) return path;
     }
-    return [[NSBundle bundleForClass:NSClassFromString(@"MDOverlayViewController")] pathForResource:@"video_alpha" ofType:@"mov"];
+    return nil;
 }
 
 @interface MDOverlayViewController : UIViewController
@@ -79,6 +79,7 @@ static NSString *MDDefaultVideoPath(void) {
         [weakSelf finish];
     }];
     self.failedObserver = [[NSNotificationCenter defaultCenter] addObserverForName:AVPlayerItemFailedToPlayToEndTimeNotification object:item queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
+        NSLog(@"[MusorDropTrollTweak] video playback failed: %@", note.userInfo);
         [weakSelf finish];
     }];
 
@@ -146,22 +147,24 @@ static UIWindow *MDActiveWindow(void) {
 
 static void MDPlay(void) {
     if (!MDEnabled || MDShowing) return;
-    MDShowing = YES;
+
     dispatch_async(dispatch_get_main_queue(), ^{
         UIWindow *window = MDActiveWindow();
         if (!window) {
-            MDShowing = NO;
-            return;
-        }
-        UIViewController *top = MDTopViewController(window.rootViewController);
-        if (!top || top.presentedViewController) {
-            MDShowing = NO;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                MDPlay();
+            });
             return;
         }
 
+        UIViewController *top = MDTopViewController(window.rootViewController);
+        if (!top) return;
+
+        MDShowing = YES;
         MDOverlayViewController *overlay = [MDOverlayViewController new];
         overlay.modalPresentationStyle = UIModalPresentationOverFullScreen;
         overlay.modalTransitionStyle = UIModalTransitionStyleCrossDissolve;
+        overlay.modalPresentationCapturesStatusBarAppearance = YES;
         [top presentViewController:overlay animated:YES completion:nil];
     });
 }
@@ -179,7 +182,9 @@ static void MDLoadPreferences(void) {
 }
 
 %ctor {
-    if ([[NSBundle mainBundle].bundleIdentifier hasPrefix:@"com.apple."]) return;
+    NSBundle *bundle = [NSBundle mainBundle];
+    NSString *bundleID = bundle.bundleIdentifier ?: @"";
+    if (![bundleID isEqualToString:@"com.apple.springboard"]) return;
 
     MDLoadPreferences();
     if (!MDEnabled) return;
