@@ -40,6 +40,8 @@ jobs:
           test -s Prefs/MDRootListController.m
           test -s control
           test -s video.mp4
+          test -s layout/preinst
+          test -s ci/export-alpha.swift
 
           pref_dir="layout/Library/PreferenceLoader/Preferences"
           pref_count=$(find "$pref_dir" -maxdepth 1 -type f -name '*.plist' | wc -l | tr -d ' ')
@@ -64,10 +66,18 @@ jobs:
             -vf "chromakey=0x00ff00:0.20:0.10,format=yuva444p10le" \
             -c:v prores_ks -profile:v 4 -pix_fmt yuva444p10le \
             -c:a aac -b:a 192k \
+            "layout/Library/Application Support/MusorDropTrollTweak/video_prores4444.mov"
+          test -s "layout/Library/Application Support/MusorDropTrollTweak/video_prores4444.mov"
+
+          swiftc ci/export-alpha.swift -o /tmp/musordroptrolltweak-export-alpha -framework AVFoundation
+          /tmp/musordroptrolltweak-export-alpha \
+            "layout/Library/Application Support/MusorDropTrollTweak/video_prores4444.mov" \
             "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
           test -s "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
-          ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,pix_fmt \
-            -of default=noprint_wrappers=1 "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
+          ffprobe -v error -select_streams v:0 \
+            -show_entries stream=codec_name,codec_tag_string,pix_fmt \
+            -of default=noprint_wrappers=1 \
+            "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
 
       - name: Build rootful package
         run: |
@@ -146,12 +156,17 @@ jobs:
             tar -tf "$data_tar" > "$tmp/data.list"
             tar -tf "$control_tar" > "$tmp/control.list"
 
-            test "$(grep -c 'Library/PreferenceLoader/Preferences/.*\.plist$' "$tmp/data.list")" -eq 1
+            pref_entries=$(grep -c 'Library/PreferenceLoader/Preferences/.*\.plist$' "$tmp/data.list" || true)
+            test "$pref_entries" -eq 1
             grep -q 'Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist$' "$tmp/data.list"
             grep -q 'Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/' "$tmp/data.list"
             grep -q 'MusorDropTrollTweak.dylib$' "$tmp/data.list"
             grep -q 'video_alpha.mov$' "$tmp/data.list"
-            test "$(grep -c 'MusorDropTrollTweakPrefs.bundle' "$tmp/data.list")" -ge 1
+            grep -q '^preinst$' "$tmp/control.list"
+            if grep -q 'MusorDropTrollTweak.plist$' "$tmp/data.list"; then
+              echo 'obsolete injection filter was packaged' >&2
+              exit 1
+            fi
             rm -rf "$tmp"
           done
 
@@ -172,5 +187,5 @@ jobs:
           gh release create "$TAG" \
             --prerelease \
             --title "$TITLE" \
-            --notes "Automatic build from commit ${GITHUB_SHA}. Includes rootful, rootless and RootHide packages. The bundled default video is chroma-keyed to remove the green screen while preserving audio. CI verifies exactly one PreferenceLoader entry, the preference bundle, runtime dylib, and bundled video." \
+            --notes "Automatic build from commit ${GITHUB_SHA}. Includes rootful, rootless and RootHide packages. CI verifies one PreferenceLoader entry, upgrade cleanup, runtime dylib, preference bundle, HEVC-with-alpha video, and absence of the obsolete injection filter." \
             build/packages/*.deb
