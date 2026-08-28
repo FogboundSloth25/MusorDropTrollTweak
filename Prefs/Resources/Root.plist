@@ -14,6 +14,7 @@
             <key>Title</key><string>Включено</string>
             <key>Key</key><string>enabled</string>
             <key>DefaultValue</key><true/>
+            <key>defaults</key><string>com.fogboundsloth25.musordroptrolltweak</string>
         </dict>
         <dict>
             <key>Type</key><string>PSTextFieldSpecifier</string>
@@ -24,6 +25,7 @@
             <key>AutocorrectionType</key><false/>
             <key>AutocapitalizationType</key><integer>0</integer>
             <key>Placeholder</key><string>Например, 10</string>
+            <key>defaults</key><string>com.fogboundsloth25.musordroptrolltweak</string>
         </dict>
         <dict>
             <key>Type</key><string>PSSliderSpecifier</string>
@@ -33,6 +35,7 @@
             <key>MinimumValue</key><real>0.0</real>
             <key>MaximumValue</key><real>1.0</real>
             <key>ShowValue</key><true/>
+            <key>defaults</key><string>com.fogboundsloth25.musordroptrolltweak</string>
         </dict>
         <dict>
             <key>Type</key><string>PSTextFieldSpecifier</string>
@@ -42,6 +45,7 @@
             <key>AutocapitalizationType</key><integer>0</integer>
             <key>AutocorrectionType</key><false/>
             <key>Placeholder</key><string>Полный путь к MP4/MOV</string>
+            <key>defaults</key><string>com.fogboundsloth25.musordroptrolltweak</string>
         </dict>
     </array>
 </dict>
