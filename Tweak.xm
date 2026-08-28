@@ -51,7 +51,6 @@ static UIWindowScene *MDActiveWindowScene(void) {
 static UIWindow *MDActiveWindow(void) {
     UIWindowScene *scene = MDActiveWindowScene();
     if (!scene) return nil;
-
     for (UIWindow *window in scene.windows) {
         if (window.hidden || window.alpha <= 0.0 || window == MDOverlayWindow) continue;
         if (window.isKeyWindow) return window;
@@ -81,13 +80,12 @@ static void MDLoadPreferences(void) {
 
     if ([volume isKindOfClass:NSNumber.class]) {
         CGFloat stored = [volume doubleValue];
-        // Keep compatibility with older releases that stored volume as 0.0-1.0.
         MDVolume = stored <= 1.0 ? MAX(0.0, MIN(1.0, stored)) : MAX(0.0, MIN(1.0, stored / 100.0));
     } else {
         MDVolume = 1.0f;
     }
 
-    MDVideoPath = ([video isKindOfClass:NSString.class] && video.length > 0) ? [video copy] : nil;
+    MDVideoPath = ([video isKindOfClass:NSString.class] && [(NSString *)video length] > 0) ? [(NSString *)video copy] : nil;
 }
 
 static void MDStartTimer(void);
@@ -196,7 +194,6 @@ static void MDPlay(void);
 - (void)finishWithResult:(BOOL)completed restartTimer:(BOOL)restartTimer {
     if (self.finishing) return;
     self.finishing = YES;
-
     if (self.endObserver) {
         [[NSNotificationCenter defaultCenter] removeObserver:self.endObserver];
         self.endObserver = nil;
@@ -310,7 +307,7 @@ static void MDPreferencesChanged(void) {
             return;
         }
 
-        // Any settings change restarts the countdown from zero.
+        // Every preference change restarts the delay from zero.
         if (MDShowing) {
             MDPendingReschedule = YES;
             return;
