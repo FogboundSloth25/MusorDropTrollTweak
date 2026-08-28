@@ -1,6 +1,5 @@
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
-#import <QuartzCore/QuartzCore.h>
 
 #if __has_include(<roothide.h>)
 #import <roothide.h>
@@ -109,7 +108,6 @@ static void MDPlay(void);
 @property(nonatomic,strong) UIView *videoView;
 @property(nonatomic,strong) UIView *dimView;
 @property(nonatomic,strong) UIControl *blocker;
-@property(nonatomic,strong) id statusObserver;
 @property(nonatomic,strong) id endObserver;
 @property(nonatomic,strong) id failedObserver;
 @property(nonatomic,assign) BOOL finishing;
@@ -124,12 +122,11 @@ static void MDPlay(void);
     self.view.opaque = NO;
     self.view.userInteractionEnabled = YES;
 
-    // The dimming layer must be UNDER the video layer. Transparent pixels in the
-    // HEVC-with-alpha movie therefore reveal the dimmed app, while the opaque
-    // parts of the movie stay at full brightness.
+    // Dimming is deliberately BELOW the video. Transparent pixels reveal the
+    // dimmed underlying app, while opaque video pixels remain at full brightness.
     self.dimView = [[UIView alloc] initWithFrame:self.view.bounds];
     self.dimView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    self.dimView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:1.0];
+    self.dimView.backgroundColor = UIColor.blackColor;
     self.dimView.alpha = 0.0;
     self.dimView.userInteractionEnabled = NO;
     [self.view addSubview:self.dimView];
@@ -170,11 +167,9 @@ static void MDPlay(void);
     self.player.automaticallyWaitsToMinimizeStalling = NO;
     self.playerLayer.player = self.player;
 
-    __weak typeof(self) weakSelf = self;
-    self.statusObserver = [item observeValueForKeyPath:@"status" options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew context:NULL];
-    // KVO registration is performed below with a dedicated block-compatible helper.
     [item addObserver:self forKeyPath:@"status" options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew context:NULL];
 
+    __weak typeof(self) weakSelf = self;
     self.endObserver = [[NSNotificationCenter defaultCenter] addObserverForName:AVPlayerItemDidPlayToEndTimeNotification object:item queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
         [weakSelf finishWithResult:YES restartTimer:YES];
     }];
@@ -202,23 +197,18 @@ static void MDPlay(void);
     if (status == AVPlayerItemStatusReadyToPlay) {
         if (self.readyToStart || self.finishing) return;
         self.readyToStart = YES;
-        [self startPlaybackWithFade];
+        [self.player play];
+        [UIView animateWithDuration:kMDFadeDuration
+                              delay:0.0
+                            options:UIViewAnimationOptionCurveEaseInOut | UIViewAnimationOptionBeginFromCurrentState
+                         animations:^{
+            self.dimView.alpha = kMDDimAlpha;
+            self.videoView.alpha = 1.0;
+        } completion:nil];
     } else if (status == AVPlayerItemStatusFailed) {
         NSLog(@"[MusorDropTrollTweak] item failed: %@", self.player.currentItem.error);
         [self finishWithResult:NO restartTimer:YES];
     }
-}
-
-- (void)startPlaybackWithFade {
-    if (self.finishing) return;
-    [self.player play];
-    [UIView animateWithDuration:kMDFadeDuration
-                          delay:0.0
-                        options:UIViewAnimationOptionCurveEaseInOut | UIViewAnimationOptionBeginFromCurrentState
-                     animations:^{
-        self.dimView.alpha = kMDDimAlpha;
-        self.videoView.alpha = 1.0;
-    } completion:nil];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -228,9 +218,9 @@ static void MDPlay(void);
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
+    self.videoView.frame = self.view.bounds;
     self.playerLayer.frame = self.videoView.bounds;
     self.dimView.frame = self.view.bounds;
-    self.videoView.frame = self.view.bounds;
     self.blocker.frame = self.view.bounds;
 }
 
@@ -239,7 +229,7 @@ static void MDPlay(void);
     self.finishing = YES;
 
     AVPlayerItem *item = self.player.currentItem;
-    if (item && [item isKindOfClass:AVPlayerItem.class]) {
+    if (item) {
         @try {
             [item removeObserver:self forKeyPath:@"status"];
         } @catch (__unused NSException *exception) {
@@ -374,8 +364,8 @@ static void MDPreferencesChanged(void) {
             return;
         }
 
-        // Apply sends this notification explicitly. The countdown is therefore
-        // changed only when the user taps Apply, not while they drag the sliders.
+        // Apply sends this notification explicitly. The countdown therefore
+        // does not react while the user is still editing the Settings pane.
         if (MDShowing) {
             MDPendingReschedule = YES;
             return;
