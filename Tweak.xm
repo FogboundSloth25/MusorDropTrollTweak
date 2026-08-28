@@ -17,7 +17,7 @@ static id MDPreference(NSString *key) {
 }
 
 static NSString *MDNormalizedVideoPath(NSString *path) {
-    if (![path isKindOfClass:NSString.class] || path.length == 0) return nil;
+    if (![path isKindOfClass:NSString.class] || [path length] == 0) return nil;
     path = [path stringByExpandingTildeInPath];
     if ([path hasPrefix:@"file://"]) {
         NSURL *url = [NSURL URLWithString:path];
@@ -69,7 +69,6 @@ static UIWindow *MDActiveWindow(void) {
 @property(nonatomic,strong) UIView *dimView;
 @property(nonatomic,strong) id endObserver;
 @property(nonatomic,strong) id failedObserver;
-@property(nonatomic,strong) id statusObserver;
 @end
 
 @implementation MDOverlayViewController
@@ -87,11 +86,11 @@ static UIWindow *MDActiveWindow(void) {
     [self.view addSubview:self.dimView];
 
     NSString *path = MDNormalizedVideoPath(MDVideoPath);
-    if (!path.length || ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+    if (![path length] || ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
         path = MDDefaultVideoPath();
     }
 
-    if (!path.length) {
+    if (![path length]) {
         NSLog(@"[MusorDropTrollTweak] video file not found");
         [self finish];
         return;
@@ -122,24 +121,13 @@ static UIWindow *MDActiveWindow(void) {
         NSLog(@"[MusorDropTrollTweak] AVPlayer failed: %@", note.userInfo);
         [weakSelf finish];
     }];
-    self.statusObserver = [item observeKeyPath:@"status" options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew changeHandler:^(AVPlayerItem *observedItem, NSDictionary<NSKeyValueChangeKey,id> *change) {
-        AVPlayerStatus status = observedItem.status;
-        if (status == AVPlayerStatusFailed) {
-            NSLog(@"[MusorDropTrollTweak] AVPlayerItem status failed: %@", observedItem.error);
-            [weakSelf finish];
-        } else if (status == AVPlayerStatusReadyToPlay) {
-            [weakSelf.player playImmediatelyAtRate:1.0];
-        }
-    }];
 
-    [UIView animateWithDuration:0.35 animations:^{
-        weakSelf.dimView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.25];
-    }];
+    [self.player play];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    [self.player playImmediatelyAtRate:1.0];
+    [self.player play];
     [self setNeedsStatusBarAppearanceUpdate];
 }
 
@@ -164,7 +152,6 @@ static UIWindow *MDActiveWindow(void) {
         [[NSNotificationCenter defaultCenter] removeObserver:self.failedObserver];
         self.failedObserver = nil;
     }
-    self.statusObserver = nil;
     [self.player pause];
 
     __weak typeof(self) weakSelf = self;
@@ -224,7 +211,10 @@ static void MDPlay(void) {
         }
 
         NSString *path = MDNormalizedVideoPath(MDVideoPath);
-        if (path.length == 0 && MDDefaultVideoPath() == nil) {
+        if (![path length] || ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+            path = MDDefaultVideoPath();
+        }
+        if (![path length]) {
             NSLog(@"[MusorDropTrollTweak] no playable video path");
             return;
         }
@@ -253,7 +243,7 @@ static void MDLoadPreferences(void) {
     MDEnabled = enabled ? [enabled boolValue] : YES;
     if ([delay isKindOfClass:NSNumber.class]) MDRolloutDelay = MAX(0.0, [delay doubleValue]);
     if ([volume isKindOfClass:NSNumber.class]) MDVolume = MAX(0.0f, MIN(1.0f, [volume floatValue]));
-    if ([video isKindOfClass:NSString.class] && video.length) MDVideoPath = [video copy];
+    if ([video isKindOfClass:NSString.class] && [video length] > 0) MDVideoPath = [video copy];
 }
 
 %ctor {
@@ -262,8 +252,8 @@ static void MDLoadPreferences(void) {
     NSString *bundleID = bundle.bundleIdentifier ?: @"";
     NSString *packageType = info[@"CFBundlePackageType"];
 
-    if (bundleID.length == 0 || [bundleID hasPrefix:@"com.apple."]) return;
     if (![packageType isEqualToString:@"APPL"]) return;
+    if ([bundleID length] == 0 || [bundleID hasPrefix:@"com.apple."]) return;
     if ([bundleID hasSuffix:@".appex"]) return;
 
     MDLoadPreferences();
