@@ -77,10 +77,6 @@ jobs:
             echo "$stats" | awk '{ if ($1 >= 250 || $2 <= 20 || $3 <= 1) exit 1 }'
           done
 
-          # Use Apple's encoder for the final transparent movie. Its successful
-          # HEVC-with-alpha preset is the authoritative encoding check; Spotlight
-          # metadata is intentionally not used as a hard failure because it may be
-          # unavailable before indexing the newly-created MOV.
           avconvert \
             --source "$intermediate" \
             --output "$output" \
@@ -151,9 +147,20 @@ jobs:
             tmp=$(mktemp -d)
             cd "$tmp"
             ar -x "$GITHUB_WORKSPACE/$pkg"
+            control_tar=$(find . -name 'control.tar.*' -print -quit)
             data_tar=$(find . -name 'data.tar.*' -print -quit)
+            test -n "$control_tar"
+            test -n "$data_tar"
+            tar -tf "$control_tar" > control.list
             tar -tf "$data_tar" > data.list
-            grep -Eq '(^|/)preinst$' data.list
+            echo '--- control.tar contents ---'
+            cat control.list
+            echo '--- data.tar contents ---'
+            cat data.list
+            if ! grep -Eq '(^|/)preinst$' control.list && ! grep -Eq '(^|/)preinst$' data.list; then
+              echo 'ERROR: preinst missing from package'
+              exit 1
+            fi
             grep -Eq 'Library/PreferenceLoader/Preferences/com\.fogboundsloth25\.musordroptrolltweak\.plist$' data.list
             grep -Eq 'Library/PreferenceBundles/MusorDropTrollTweakPrefs\.bundle/Info\.plist$' data.list
             grep -Eq 'Library/PreferenceBundles/MusorDropTrollTweakPrefs\.bundle/MDRootListController' data.list
