@@ -34,7 +34,7 @@ jobs:
           set -euo pipefail
           test -s Makefile
           test -s Tweak.xm
-          test ! -e MusorDropTrollTweak.plist
+          test -s MusorDropTrollTweak.plist
           test -s Prefs/Resources/Info.plist
           test -s Prefs/Resources/Root.plist
           test -s Prefs/MDRootListController.m
@@ -42,6 +42,14 @@ jobs:
           test -s video.mp4
           test -s layout/preinst
           test -s ci/export-alpha.swift
+
+          plutil -lint MusorDropTrollTweak.plist
+          plutil -lint Prefs/Resources/Info.plist
+          plutil -lint Prefs/Resources/Root.plist
+          grep -q '<key>Filter</key>' MusorDropTrollTweak.plist
+          ! grep -q '<key>Bundles</key>' MusorDropTrollTweak.plist
+          ! grep -q '<key>Executables</key>' MusorDropTrollTweak.plist
+          ! grep -q '<key>Classes</key>' MusorDropTrollTweak.plist
 
           pref_dir="layout/Library/PreferenceLoader/Preferences"
           pref_count=$(find "$pref_dir" -maxdepth 1 -type f -name '*.plist' | wc -l | tr -d ' ')
@@ -51,9 +59,6 @@ jobs:
           grep -q '<key>entry</key>' "$pref_file"
           grep -q '<string>MusorDropTrollTweakPrefs</string>' "$pref_file"
           grep -q '<string>MusorDropTrollTweak</string>' "$pref_file"
-
-          plutil -lint Prefs/Resources/Info.plist
-          plutil -lint Prefs/Resources/Root.plist
           plutil -lint "$pref_file"
 
       - name: Prepare default video with green screen removed
@@ -163,10 +168,7 @@ jobs:
             grep -q 'MusorDropTrollTweak.dylib$' "$tmp/data.list"
             grep -q 'video_alpha.mov$' "$tmp/data.list"
             grep -q '^preinst$' "$tmp/control.list"
-            if grep -q 'MusorDropTrollTweak.plist$' "$tmp/data.list"; then
-              echo 'obsolete injection filter was packaged' >&2
-              exit 1
-            fi
+            grep -q 'MusorDropTrollTweak.plist$' "$tmp/data.list"
             rm -rf "$tmp"
           done
 
@@ -187,5 +189,5 @@ jobs:
           gh release create "$TAG" \
             --prerelease \
             --title "$TITLE" \
-            --notes "Automatic build from commit ${GITHUB_SHA}. Includes rootful, rootless and RootHide packages. CI verifies one PreferenceLoader entry, upgrade cleanup, runtime dylib, preference bundle, HEVC-with-alpha video, and absence of the obsolete injection filter." \
+            --notes "Automatic build from commit ${GITHUB_SHA}. Includes rootful, rootless and RootHide packages. CI verifies one unrestricted injection filter, one PreferenceLoader entry, upgrade cleanup, runtime dylib, preference bundle, and HEVC-with-alpha video." \
             build/packages/*.deb
