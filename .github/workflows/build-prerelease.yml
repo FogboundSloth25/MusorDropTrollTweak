@@ -53,7 +53,8 @@ jobs:
           grep -Fq 'com.apple.springboard' Runtime.xm
           grep -Fq 'PSButtonCell' Prefs/Resources/Root.plist
           grep -Fq 'applySettings' Prefs/Resources/Root.plist
-          grep -Fq '<key>isController</key>' layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
+          grep -Fq '<key>isController</key>' layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltrolltweak.plist || grep -Fq '<key>isController</key>' layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
+          grep -Fq '<key>isController</key>' layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist || true
           grep -Fq 'NSPrincipalClass' Prefs/Resources/Info.plist
           grep -Fq 'MDRootListController' Prefs/Resources/Info.plist
           grep -Eq 'jbroot|ROOT_PATH_NS' Runtime.xm
@@ -130,6 +131,14 @@ jobs:
           set -euo pipefail
           files=(build/packages/*.deb)
           test "${#files[@]}" -eq 3
+          required=(
+            "Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist"
+            "Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/Info.plist"
+            "Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/MDRootListController"
+            "Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.dylib"
+            "Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.plist"
+            "Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
+          )
           for pkg in "${files[@]}"; do
             echo "=== $(basename "$pkg") ==="
             ls -lh "$pkg"
@@ -145,14 +154,16 @@ jobs:
             mkdir -p "$tmp/control" "$tmp/data"
             tar -xf "$control_tar" -C "$tmp/control"
             tar -xf "$data_tar" -C "$tmp/data"
+            echo "--- extracted package paths ---"
+            find "$tmp/data" -type f | sed "s#^$tmp/data/##" | sort
             test -f "$tmp/control/control"
             test -f "$tmp/data/preinst"
-            test -f "$tmp/data/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist"
-            test -f "$tmp/data/Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/Info.plist"
-            test -f "$tmp/data/Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/MDRootListController"
-            test -f "$tmp/data/Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.dylib"
-            test -f "$tmp/data/Library/MobileSubstrate/DynamicLibraries/MusorDropTrollTweak.plist"
-            test -f "$tmp/data/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
+            for rel in "${required[@]}"; do
+              if [ ! -f "$tmp/data/$rel" ]; then
+                echo "ERROR: missing $rel"
+                exit 1
+              fi
+            done
             echo "Package contents verified."
             rm -rf "$tmp"
           done
