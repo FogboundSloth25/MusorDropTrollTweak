@@ -1,8 +1,8 @@
 Package: com.fogboundsloth25.musordroptrolltweak
 Name: MusorDropTrollTweak
-Version: 1.3.0
+Version: 1.4.0
 Architecture: iphoneos-arm
-Description: Entertainment prank video overlay tweak with configurable repeating timer.
+Description: Global SpringBoard video overlay with configurable repeating timer, audio, dimming and two-finger double-tap exit.
 Maintainer: FogboundSloth25
 Author: FogboundSloth25
 Section: Tweaks
