@@ -67,9 +67,8 @@ jobs:
           mkdir -p "layout/Library/Application Support/MusorDropTrollTweak"
           video="layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
 
-          # colorkey operates in RGB. This is intentional: the source green screen
-          # is RGB-green and chromakey (YUV) produced an all-zero alpha stream here.
-          # Keep the audio stream unchanged.
+          # Use the RGB colorkey filter: the source is an RGB green-screen clip.
+          # This preserves the subject alpha and keeps the original audio track.
           ffmpeg -hide_banner -loglevel error -y \
             -i video.mp4 \
             -vf "colorkey=0x00ff00:0.20:0.10,despill=green:0.70,format=yuva444p10le" \
@@ -95,7 +94,10 @@ jobs:
             amean=$(echo "$stats" | awk '{print $3}')
             test "$amin" -lt 250
             test "$amax" -gt 20
-            test "$amean" -gt 1
+            python3 - <<PY
+value = float("$amean")
+assert value > 1.0, value
+PY
           done
 
       - name: Build rootful package
@@ -218,5 +220,5 @@ jobs:
           gh release create "$TAG" \
             --prerelease \
             --title "$TITLE" \
-            --notes "1.2.1. Fixed RGB green-screen removal with ProRes 4444 alpha, cross-process preference reload, repeating countdown, 25% dimming and full-screen aspect-fill playback. Rootful, rootless and RootHide packages." \
+            --notes "1.2.2. Correct RGB green-screen removal with validated alpha frames, cross-process preference reload, repeating countdown, 25% dimming and full-screen aspect-fill playback. Rootful, rootless and RootHide packages." \
             build/packages/*.deb
