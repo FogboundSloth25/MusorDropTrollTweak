@@ -34,17 +34,25 @@ jobs:
           set -euo pipefail
           test -s Makefile
           test -s Tweak.xm
-          test -s MusorDropTrollTweak.plist
+          test ! -e MusorDropTrollTweak.plist
           test -s Prefs/Resources/Info.plist
           test -s Prefs/Resources/Root.plist
           test -s Prefs/MDRootListController.m
           test -s control
           test -s video.mp4
-          test -s layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
-          plutil -lint MusorDropTrollTweak.plist
+
+          pref_dir="layout/Library/PreferenceLoader/Preferences"
+          pref_count=$(find "$pref_dir" -maxdepth 1 -type f -name '*.plist' | wc -l | tr -d ' ')
+          test "$pref_count" -eq 1
+          pref_file=$(find "$pref_dir" -maxdepth 1 -type f -name '*.plist' -print -quit)
+          test -n "$pref_file"
+          grep -q '<key>entry</key>' "$pref_file"
+          grep -q '<string>MusorDropTrollTweakPrefs</string>' "$pref_file"
+          grep -q '<string>MusorDropTrollTweak</string>' "$pref_file"
+
           plutil -lint Prefs/Resources/Info.plist
           plutil -lint Prefs/Resources/Root.plist
-          plutil -lint layout/Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist
+          plutil -lint "$pref_file"
 
       - name: Prepare default video with green screen removed
         run: |
@@ -137,10 +145,13 @@ jobs:
 
             tar -tf "$data_tar" > "$tmp/data.list"
             tar -tf "$control_tar" > "$tmp/control.list"
+
+            test "$(grep -c 'Library/PreferenceLoader/Preferences/.*\.plist$' "$tmp/data.list")" -eq 1
             grep -q 'Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist$' "$tmp/data.list"
             grep -q 'Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/' "$tmp/data.list"
             grep -q 'MusorDropTrollTweak.dylib$' "$tmp/data.list"
             grep -q 'video_alpha.mov$' "$tmp/data.list"
+            test "$(grep -c 'MusorDropTrollTweakPrefs.bundle' "$tmp/data.list")" -ge 1
             rm -rf "$tmp"
           done
 
@@ -161,5 +172,5 @@ jobs:
           gh release create "$TAG" \
             --prerelease \
             --title "$TITLE" \
-            --notes "Automatic build from commit ${GITHUB_SHA}. Includes rootful, rootless and RootHide packages. The bundled default video is chroma-keyed to remove the green screen while preserving audio. CI also verifies PreferenceLoader registration, PreferenceBundle contents and the bundled video." \
+            --notes "Automatic build from commit ${GITHUB_SHA}. Includes rootful, rootless and RootHide packages. The bundled default video is chroma-keyed to remove the green screen while preserving audio. CI verifies exactly one PreferenceLoader entry, the preference bundle, runtime dylib, and bundled video." \
             build/packages/*.deb
