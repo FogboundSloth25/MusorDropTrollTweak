@@ -161,14 +161,14 @@ jobs:
             tar -tf "$data_tar" > "$tmp/data.list"
             tar -tf "$control_tar" > "$tmp/control.list"
 
-            pref_entries=$(grep -c 'Library/PreferenceLoader/Preferences/.*\.plist$' "$tmp/data.list" || true)
+            pref_entries=$(grep -Ec '(^|/)Library/PreferenceLoader/Preferences/[^/]+\.plist$' "$tmp/data.list" || true)
             test "$pref_entries" -eq 1
-            grep -q 'Library/PreferenceLoader/Preferences/com.fogboundsloth25.musordroptrolltweak.plist$' "$tmp/data.list"
-            grep -q 'Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/' "$tmp/data.list"
-            grep -q 'MusorDropTrollTweak.dylib$' "$tmp/data.list"
-            grep -q 'video_alpha.mov$' "$tmp/data.list"
-            grep -q '^preinst$' "$tmp/control.list"
-            grep -q 'MusorDropTrollTweak.plist$' "$tmp/data.list"
+            grep -Eq '(^|/)Library/PreferenceLoader/Preferences/com\.fogboundsloth25\.musordroptrolltweak\.plist$' "$tmp/data.list"
+            grep -Eq '(^|/)Library/PreferenceBundles/MusorDropTrollTweakPrefs\.bundle(/|$)' "$tmp/data.list"
+            grep -Eq '(^|/)MusorDropTrollTweak\.dylib$' "$tmp/data.list"
+            grep -Eq '(^|/)video_alpha\.mov$' "$tmp/data.list"
+            grep -Fxq 'preinst' "$tmp/control.list"
+            grep -Eq '(^|/)MusorDropTrollTweak\.plist$' "$tmp/data.list"
             rm -rf "$tmp"
           done
 
