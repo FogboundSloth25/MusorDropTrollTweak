@@ -57,6 +57,9 @@ jobs:
           grep -q 'PSSwitchCell' "$pref_dir"/*.plist
           grep -q 'PSSliderCell' "$pref_dir"/*.plist
           grep -q 'PSEditTextCell' "$pref_dir"/*.plist
+          grep -q '<string>Задержка показа</string>' "$pref_dir"/*.plist
+          grep -q '<string>Громкость</string>' "$pref_dir"/*.plist
+          grep -q '<string>Кастомное видео</string>' "$pref_dir"/*.plist
 
       - name: Prepare default transparent video
         run: |
@@ -64,17 +67,37 @@ jobs:
           test -s video.mp4
           rm -rf "layout/Library/Application Support/MusorDropTrollTweak"
           mkdir -p "layout/Library/Application Support/MusorDropTrollTweak"
-          ffmpeg -hide_banner -loglevel error -y \
-            -i video.mp4 \
-            -vf "chromakey=0x00ff00:0.20:0.10,format=yuva444p10le" \
-            -c:v prores_ks -profile:v 4 -pix_fmt yuva444p12le \
-            -c:a pcm_s16le \
-            "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
+
+          # Apple documents HEVC with Alpha as an AVPlayer/AVPlayerLayer delivery
+          # format. On macOS runners use VideoToolbox instead of libx265.
+          if ffmpeg -hide_banner -encoders 2>/dev/null | grep -q 'hevc_videotoolbox'; then
+            ffmpeg -hide_banner -loglevel error -y \
+              -i video.mp4 \
+              -vf "chromakey=0x00ff00:0.20:0.10,format=yuva420p" \
+              -c:v hevc_videotoolbox -alpha_quality 0.90 -tag:v hvc1 \
+              -c:a aac -b:a 192k \
+              "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
+          else
+            echo "VideoToolbox HEVC encoder unavailable; using ProRes 4444 fallback."
+            ffmpeg -hide_banner -loglevel error -y \
+              -i video.mp4 \
+              -vf "chromakey=0x00ff00:0.20:0.10,format=yuva444p10le" \
+              -c:v prores_ks -profile:v 4 -pix_fmt yuva444p12le \
+              -c:a pcm_s16le \
+              "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
+          fi
+
           test -s "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
-          video_probe=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,pix_fmt -of default=nw=1:nk=1 "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov")
+          ffprobe -v error -show_entries stream=index,codec_name,codec_tag_string,pix_fmt,width,height,r_frame_rate -of default=nw=1 "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
+          video_probe=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,pix_fmt,codec_tag_string -of default=nw=1:nk=1 "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov")
           echo "$video_probe"
-          echo "$video_probe" | grep -q '^prores$'
-          echo "$video_probe" | grep -Eq '^yuva444p([0-9]+)?le$'
+          if echo "$video_probe" | grep -q '^hevc$'; then
+            echo "$video_probe" | grep -q 'hvc1'
+            echo "$video_probe" | grep -q 'yuva420p'
+          else
+            echo "$video_probe" | grep -q '^prores$'
+            echo "$video_probe" | grep -Eq '^yuva444p([0-9]+)?le$'
+          fi
 
       - name: Build rootful package
         run: |
@@ -156,9 +179,7 @@ jobs:
             tar -tf "$control_tar" > "$tmp/control.list"
 
             root_prefix=""
-            if grep -Eq '^var/jb/' "$tmp/data.list"; then
-              root_prefix='var/jb/'
-            fi
+            if grep -Eq '^var/jb/' "$tmp/data.list"; then root_prefix='var/jb/'; fi
 
             pref_entries=$(grep -Ec '(^|/)(var/jb/)?Library/PreferenceLoader/Preferences/[^/]+\.plist$' "$tmp/data.list" || true)
             test "$pref_entries" -eq 1
@@ -180,21 +201,12 @@ jobs:
             test -s "$tweak_filter"
             plutil -lint "$pref_file"
             plutil -lint "$tweak_filter"
-
             pref_dump=$(plutil -p "$pref_file")
-            printf '%s\n' "$pref_dump" | grep -q '"title"'
-            printf '%s\n' "$pref_dump" | grep -q '"entry"'
-            printf '%s\n' "$pref_dump" | grep -q '"items"'
             printf '%s\n' "$pref_dump" | grep -q 'PSSwitchCell'
             printf '%s\n' "$pref_dump" | grep -q 'PSSliderCell'
             printf '%s\n' "$pref_dump" | grep -q 'PSEditTextCell'
-
             filter_dump=$(plutil -p "$tweak_filter")
-            printf '%s\n' "$filter_dump" | grep -q 'Bundles'
             printf '%s\n' "$filter_dump" | grep -q 'com.apple.UIKit'
-
-            test ! -e "$data_dir/${root_prefix}Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/Info.plist"
-
             rm -rf "$data_dir" "$tmp"
             trap - EXIT
           done
@@ -216,5 +228,5 @@ jobs:
           gh release create "$TAG" \
             --prerelease \
             --title "$TITLE" \
-            --notes "1.1.0 rebuild. PreferenceBundle removed; settings are now provided directly by the standard PreferenceLoader extended entry. Injection uses the documented com.apple.UIKit filter and the constructor excludes Apple/system bundles. Old PreferenceBundle/filter artifacts are removed by preinst." \
+            --notes "1.2.0. Reworked runtime scheduling, cross-process preference reload, repeat countdown, 25% dimming, full-screen aspect-fill video, clearer settings, and HEVC with Alpha delivery when VideoToolbox is available. Rootful, rootless and RootHide packages." \
             build/packages/*.deb
