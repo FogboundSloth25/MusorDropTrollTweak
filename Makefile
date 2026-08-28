@@ -5,7 +5,9 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME := MusorDropTrollTweak
 MusorDropTrollTweak_FILES := Runtime.xm
-MusorDropTrollTweak_CFLAGS := -fobjc-arc
+MusorDropTrollTweak_CFLAGS := -fobjc-arc \
+    -DUIApplicationProtectedDataWillBecomeUnavailableNotification=UIApplicationProtectedDataWillBecomeUnavailable \
+    -DUIApplicationProtectedDataDidBecomeAvailableNotification=UIApplicationProtectedDataDidBecomeAvailable
 MusorDropTrollTweak_FRAMEWORKS := UIKit AVFoundation QuartzCore
 MusorDropTrollTweak_INSTALL_PATH := /Library/MobileSubstrate/DynamicLibraries
 
