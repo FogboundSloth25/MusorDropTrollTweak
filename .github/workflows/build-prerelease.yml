@@ -1,0 +1,81 @@
+name: Build Tweak Pre-release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          brew update
+          brew install ldid dpkg ffmpeg
+
+      - name: Install Theos
+        run: |
+          git clone --depth=1 https://github.com/theos/theos.git "$HOME/theos"
+          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
+
+      - name: Prepare transparent default video
+        run: |
+          set -euo pipefail
+          test -f video.mp4
+          mkdir -p build/assets
+          ffmpeg -hide_banner -loglevel error -y \
+            -i video.mp4 \
+            -vf "chromakey=0x00ff00:0.22:0.08,format=yuva444p10le" \
+            -c:v prores_ks -profile:v 4 -pix_fmt yuva444p10le \
+            -an build/assets/video_alpha.mov
+
+      - name: Build tweak
+        run: |
+          set -euo pipefail
+          if [[ ! -f Makefile ]]; then
+            echo "ERROR: Makefile not found. The repository currently contains no Theos tweak source, so there is nothing to compile."
+            exit 1
+          fi
+          make package FINALPACKAGE=1 STRIP=1
+
+      - name: Collect packages
+        run: |
+          set -euo pipefail
+          mkdir -p build/packages
+          find . -type f \( -name '*.deb' -o -name '*.pkg' -o -name '*.tipa' \) -not -path './build/*' -exec cp -v {} build/packages/ \;
+          if ! find build/packages -type f | grep -q .; then
+            echo "ERROR: The build completed without producing a package (.deb/.pkg/.tipa)."
+            exit 1
+          fi
+          find build/packages -maxdepth 1 -type f -print
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusorDropTrollTweak-build-${{ github.run_number }}
+          path: |
+            build/packages/*
+            build/assets/video_alpha.mov
+          if-no-files-found: error
+
+      - name: Create GitHub pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="nightly-${GITHUB_RUN_NUMBER}"
+          TITLE="MusorDropTrollTweak nightly ${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" \
+            --prerelease \
+            --title "$TITLE" \
+            --notes "Automatic pre-release build from commit ${GITHUB_SHA}." \
+            build/packages/* \
+            build/assets/video_alpha.mov
