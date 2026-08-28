@@ -180,11 +180,19 @@ jobs:
             test -s "$tweak_filter"
             plutil -lint "$pref_file"
             plutil -lint "$tweak_filter"
-            grep -q '<key>items</key>' "$pref_file"
-            grep -q 'PSSwitchCell' "$pref_file"
-            grep -q 'PSSliderCell' "$pref_file"
-            grep -q 'PSEditTextCell' "$pref_file"
-            grep -q 'com.apple.UIKit' "$tweak_filter"
+
+            pref_dump=$(plutil -p "$pref_file")
+            printf '%s\n' "$pref_dump" | grep -q '"title"'
+            printf '%s\n' "$pref_dump" | grep -q '"entry"'
+            printf '%s\n' "$pref_dump" | grep -q '"items"'
+            printf '%s\n' "$pref_dump" | grep -q 'PSSwitchCell'
+            printf '%s\n' "$pref_dump" | grep -q 'PSSliderCell'
+            printf '%s\n' "$pref_dump" | grep -q 'PSEditTextCell'
+
+            filter_dump=$(plutil -p "$tweak_filter")
+            printf '%s\n' "$filter_dump" | grep -q 'Bundles'
+            printf '%s\n' "$filter_dump" | grep -q 'com.apple.UIKit'
+
             test ! -e "$data_dir/${root_prefix}Library/PreferenceBundles/MusorDropTrollTweakPrefs.bundle/Info.plist"
 
             rm -rf "$data_dir" "$tmp"
