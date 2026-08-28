@@ -24,19 +24,15 @@ static BOOL MDEnabled = YES;
 static NSTimeInterval MDDelay = 10.0;
 static float MDVolume = 1.0f;
 static NSString *MDVideoPath = nil;
-
 static BOOL MDLocked = NO;
 static BOOL MDShowing = NO;
-static BOOL MDExiting = NO;
 static BOOL MDTimerPaused = NO;
 static NSTimeInterval MDRemaining = 0.0;
 static CFTimeInterval MDDeadline = 0.0;
 static dispatch_block_t MDTimerBlock = nil;
-
 static UIWindow *MDOverlayWindow = nil;
 static UIWindow *MDPreviousKeyWindow = nil;
 
-static id MDNotificationChanged = nil;
 static id MDProtectedUnavailable = nil;
 static id MDProtectedAvailable = nil;
 static id MDDidBecomeActive = nil;
@@ -63,11 +59,7 @@ static void MDLoadPreferences(void) {
         MDVolume = 1.0f;
     }
 
-    if ([path isKindOfClass:NSString.class] && [(NSString *)path length]) {
-        MDVideoPath = [(NSString *)path copy];
-    } else {
-        MDVideoPath = nil;
-    }
+    MDVideoPath = ([path isKindOfClass:NSString.class] && [(NSString *)path length]) ? [(NSString *)path copy] : nil;
 }
 
 static NSString *MDResolveVideoPath(void) {
@@ -77,16 +69,11 @@ static NSString *MDResolveVideoPath(void) {
             NSURL *url = [NSURL URLWithString:custom];
             custom = url.isFileURL ? url.path : nil;
         }
-        if (custom.length && [[NSFileManager defaultManager] fileExistsAtPath:custom]) {
-            return custom;
-        }
+        if (custom.length && [[NSFileManager defaultManager] fileExistsAtPath:custom]) return custom;
     }
 
     NSString *builtIn = MDPath(kMDBuiltInVideo);
-    if (builtIn.length && [[NSFileManager defaultManager] fileExistsAtPath:builtIn]) {
-        return builtIn;
-    }
-
+    if (builtIn.length && [[NSFileManager defaultManager] fileExistsAtPath:builtIn]) return builtIn;
     return nil;
 }
 
@@ -113,7 +100,6 @@ static void MDResumeTimerAfterUnlock(void);
 @property(nonatomic,strong) id endObserver;
 @property(nonatomic,strong) id failObserver;
 @property(nonatomic,strong) id stalledObserver;
-@property(nonatomic,strong) id timeObserver;
 @property(nonatomic,assign) BOOL ready;
 @property(nonatomic,assign) BOOL finishing;
 @property(nonatomic,assign) BOOL exitRequested;
@@ -146,7 +132,6 @@ static void MDResumeTimerAfterUnlock(void);
     [self.view addSubview:self.videoView];
 
     self.playerLayer = [AVPlayerLayer layer];
-    self.playerLayer.frame = self.videoView.bounds;
     self.playerLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
     self.playerLayer.backgroundColor = UIColor.clearColor.CGColor;
     [self.videoView.layer addSublayer:self.playerLayer];
@@ -174,20 +159,18 @@ static void MDResumeTimerAfterUnlock(void);
     NSURL *url = [NSURL fileURLWithPath:path isDirectory:NO];
     AVURLAsset *asset = [AVURLAsset URLAssetWithURL:url options:@{AVURLAssetPreferPreciseDurationAndTimingKey:@YES}];
     AVPlayerItem *item = [AVPlayerItem playerItemWithAsset:asset];
-
     self.player = [AVPlayer playerWithPlayerItem:item];
     self.player.volume = MDVolume;
     self.player.actionAtItemEnd = AVPlayerActionAtItemEndPause;
     self.player.automaticallyWaitsToMinimizeStalling = YES;
     self.playerLayer.player = self.player;
-
     [item addObserver:self forKeyPath:@"status" options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew context:NULL];
 
     __weak typeof(self) weakSelf = self;
-    self.endObserver = [[NSNotificationCenter defaultCenter] addObserverForName:AVPlayerItemDidPlayToEndTimeNotification object:item queue:[NSOperationQueue mainQueue] usingBlock:^(__unused NSNotification *note) {
+    self.endObserver = [[NSNotificationCenter defaultCenter] addObserverForName:AVPlayerItemDidPlayToEndTimeNotification object:item queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
         [weakSelf finishAndScheduleNext];
     }];
-    self.failObserver = [[NSNotificationCenter defaultCenter] addObserverForName:AVPlayerItemFailedToPlayToEndTimeNotification object:item queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
+    self.failObserver = [[NSNotificationCenter defaultCenter] addObserverForName:AVPlayerItemFailedToPlayToEndTimeNotification object:item queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
         NSLog(@"[MusorDropTrollTweak] AVPlayer failed: %@", note.userInfo);
         if (!weakSelf.finishing) {
             [weakSelf.player seekToTime:kCMTimeZero completionHandler:^(__unused BOOL finished) {
@@ -195,31 +178,17 @@ static void MDResumeTimerAfterUnlock(void);
             }];
         }
     }];
-    self.stalledObserver = [[NSNotificationCenter defaultCenter] addObserverForName:AVPlayerItemPlaybackStalledNotification object:item queue:[NSOperationQueue mainQueue] usingBlock:^(__unused NSNotification *note) {
-        if (!weakSelf.finishing) {
-            [weakSelf.player play];
-        }
+    self.stalledObserver = [[NSNotificationCenter defaultCenter] addObserverForName:AVPlayerItemPlaybackStalledNotification object:item queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+        if (!weakSelf.finishing) [weakSelf.player play];
     }];
 
-    AVAudioSession *session = [AVAudioSession sharedInstance];
+    AVAudioSession *session = AVAudioSession.sharedInstance;
     NSError *error = nil;
-    [session setCategory:AVAudioSessionCategoryPlayback
-                    mode:AVAudioSessionModeMoviePlayback
-                 options:AVAudioSessionCategoryOptionMixWithOthers
-                   error:&error];
+    [session setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeMoviePlayback options:AVAudioSessionCategoryOptionMixWithOthers error:&error];
     if (error) NSLog(@"[MusorDropTrollTweak] audio category error: %@", error);
-
     error = nil;
     [session setActive:YES error:&error];
     if (error) NSLog(@"[MusorDropTrollTweak] audio activation error: %@", error);
-
-    self.interrupted = NO;
-}
-
-- (void)viewDidAppear:(BOOL)animated {
-    [super viewDidAppear:animated];
-    self.view.frame = self.view.superview.bounds;
-    self.touchBlocker.frame = self.view.bounds;
 }
 
 - (void)viewDidLayoutSubviews {
@@ -230,9 +199,7 @@ static void MDResumeTimerAfterUnlock(void);
     self.touchBlocker.frame = self.view.bounds;
 }
 
-- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
-    return NO;
-}
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer { return NO; }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
     if (![keyPath isEqualToString:@"status"] || object != self.player.currentItem) {
@@ -244,16 +211,12 @@ static void MDResumeTimerAfterUnlock(void);
     if (status == AVPlayerItemStatusReadyToPlay && !self.ready && !self.finishing) {
         self.ready = YES;
         [self.player play];
-
-        [UIView animateWithDuration:kMDFadeDuration
-                              delay:0.0
-                            options:UIViewAnimationOptionCurveEaseInOut | UIViewAnimationOptionBeginFromCurrentState
-                         animations:^{
+        [UIView animateWithDuration:kMDFadeDuration delay:0.0 options:UIViewAnimationOptionCurveEaseInOut | UIViewAnimationOptionBeginFromCurrentState animations:^{
             self.dimmingView.alpha = kMDDimAlpha;
             self.videoView.alpha = 1.0;
         } completion:nil];
     } else if (status == AVPlayerItemStatusFailed && !self.finishing) {
-        NSLog(@"[MusorDropTrollTweak] AVPlayerItem status failed: %@", self.player.currentItem.error);
+        NSLog(@"[MusorDropTrollTweak] AVPlayerItem error: %@", self.player.currentItem.error);
         [self finishAndScheduleNext];
     }
 }
@@ -267,7 +230,6 @@ static void MDResumeTimerAfterUnlock(void);
 - (void)finishAndScheduleNext {
     if (self.finishing) return;
     self.finishing = YES;
-    MDExiting = self.exitRequested;
 
     AVPlayerItem *item = self.player.currentItem;
     if (item) {
@@ -279,42 +241,31 @@ static void MDResumeTimerAfterUnlock(void);
     self.endObserver = nil;
     self.failObserver = nil;
     self.stalledObserver = nil;
-
     [self.player pause];
 
-    [UIView animateWithDuration:kMDFadeDuration
-                          delay:0.0
-                        options:UIViewAnimationOptionCurveEaseInOut | UIViewAnimationOptionBeginFromCurrentState
-                     animations:^{
+    [UIView animateWithDuration:kMDFadeDuration delay:0.0 options:UIViewAnimationOptionCurveEaseInOut | UIViewAnimationOptionBeginFromCurrentState animations:^{
         self.videoView.alpha = 0.0;
         self.dimmingView.alpha = 0.0;
     } completion:^(__unused BOOL finished) {
         UIWindow *window = MDOverlayWindow;
         MDOverlayWindow = nil;
         MDShowing = NO;
-
         if (window) {
             window.hidden = YES;
             window.rootViewController = nil;
-            if (MDPreviousKeyWindow && !MDPreviousKeyWindow.hidden) {
-                [MDPreviousKeyWindow makeKeyAndVisible];
-            }
         }
+        if (MDPreviousKeyWindow && !MDPreviousKeyWindow.hidden) [MDPreviousKeyWindow makeKeyAndVisible];
         MDPreviousKeyWindow = nil;
-
         if (MDEnabled && !MDLocked) {
             MDLoadPreferences();
-            MDStartTimer(MDExiting ? MDDelay : MDDelay);
+            MDStartTimer(MDDelay);
         }
-        MDExiting = NO;
     }];
 }
 
 - (void)dealloc {
     AVPlayerItem *item = self.player.currentItem;
-    if (item) {
-        @try { [item removeObserver:self forKeyPath:@"status"]; } @catch (__unused NSException *e) {}
-    }
+    if (item) { @try { [item removeObserver:self forKeyPath:@"status"]; } @catch (__unused NSException *e) {} }
     if (self.endObserver) [[NSNotificationCenter defaultCenter] removeObserver:self.endObserver];
     if (self.failObserver) [[NSNotificationCenter defaultCenter] removeObserver:self.failObserver];
     if (self.stalledObserver) [[NSNotificationCenter defaultCenter] removeObserver:self.stalledObserver];
@@ -323,17 +274,13 @@ static void MDResumeTimerAfterUnlock(void);
 - (BOOL)prefersStatusBarHidden { return YES; }
 - (BOOL)shouldAutorotate { return YES; }
 - (UIInterfaceOrientationMask)supportedInterfaceOrientations { return UIInterfaceOrientationMaskAll; }
-
 @end
 
 static UIWindowScene *MDActiveWindowScene(void) {
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
         if (![scene isKindOfClass:UIWindowScene.class]) continue;
         UIWindowScene *windowScene = (UIWindowScene *)scene;
-        if (windowScene.activationState == UISceneActivationStateForegroundActive ||
-            windowScene.activationState == UISceneActivationStateUnattached) {
-            return windowScene;
-        }
+        if (windowScene.activationState == UISceneActivationStateForegroundActive || windowScene.activationState == UISceneActivationStateUnattached) return windowScene;
     }
     return nil;
 }
@@ -350,11 +297,10 @@ static UIWindow *MDCreateOverlayWindow(void) {
 
 static void MDShowVideo(void) {
     if (!MDEnabled || MDLocked || MDShowing) return;
-    if (![NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.apple.springboard"]) return;
 
     NSString *path = MDResolveVideoPath();
     if (!path.length) {
-        NSLog(@"[MusorDropTrollTweak] built-in video path unavailable");
+        NSLog(@"[MusorDropTrollTweak] playable video path unavailable");
         MDStartTimer(kMDRetryDelay);
         return;
     }
@@ -362,19 +308,22 @@ static void MDShowVideo(void) {
     MDCancelTimer();
     MDShowing = YES;
 
-    for (UIWindow *window in UIApplication.sharedApplication.windows) {
-        if (window == MDOverlayWindow || window.hidden || window.alpha <= 0.0) continue;
-        if (window.isKeyWindow) {
-            MDPreviousKeyWindow = window;
-            break;
+    UIWindowScene *scene = MDActiveWindowScene();
+    if (scene) {
+        for (UIWindow *window in scene.windows) {
+            if (window.hidden || window.alpha <= 0.0 || window == MDOverlayWindow) continue;
+            if (window.isKeyWindow) {
+                MDPreviousKeyWindow = window;
+                break;
+            }
         }
     }
 
     MDGlobalVideoController *controller = [MDGlobalVideoController new];
-    UIWindow *overlay = MDCreateOverlayWindow();
-    overlay.rootViewController = controller;
-    MDOverlayWindow = overlay;
-    [overlay makeKeyAndVisible];
+    UIWindow *window = MDCreateOverlayWindow();
+    window.rootViewController = controller;
+    MDOverlayWindow = window;
+    [window makeKeyAndVisible];
 }
 
 static void MDStartTimer(NSTimeInterval delay) {
@@ -383,7 +332,6 @@ static void MDStartTimer(NSTimeInterval delay) {
 
     MDRemaining = MAX(0.0, delay);
     MDDeadline = CACurrentMediaTime() + MDRemaining;
-
     MDTimerBlock = dispatch_block_create(DISPATCH_BLOCK_INHERIT_QOS_CLASS, ^{
         dispatch_async(dispatch_get_main_queue(), ^{
             MDTimerBlock = nil;
@@ -392,13 +340,11 @@ static void MDStartTimer(NSTimeInterval delay) {
             if (MDEnabled && !MDLocked && !MDShowing) MDShowVideo();
         });
     });
-
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(MDRemaining * NSEC_PER_SEC)), dispatch_get_main_queue(), MDTimerBlock);
 }
 
 static void MDPauseTimerForLock(void) {
     if (MDShowing || !MDTimerBlock) return;
-
     CFTimeInterval now = CACurrentMediaTime();
     MDRemaining = MDDeadline > now ? (MDDeadline - now) : 0.0;
     MDTimerPaused = YES;
@@ -407,7 +353,6 @@ static void MDPauseTimerForLock(void) {
 
 static void MDResumeTimerAfterUnlock(void) {
     if (!MDEnabled || MDShowing || MDLocked) return;
-
     if (MDTimerPaused) {
         NSTimeInterval remaining = MDRemaining;
         MDTimerPaused = NO;
@@ -424,39 +369,34 @@ static void MDApplyPreferences(void) {
         MDTimerPaused = NO;
 
         if (!MDEnabled) {
-            if (MDShowing && MDOverlayWindow.rootViewController) {
+            if (MDShowing && [MDOverlayWindow.rootViewController isKindOfClass:MDGlobalVideoController.class]) {
                 [(MDGlobalVideoController *)MDOverlayWindow.rootViewController finishAndScheduleNext];
             }
             return;
         }
 
         if (MDShowing && [MDOverlayWindow.rootViewController isKindOfClass:MDGlobalVideoController.class]) {
-            MDGlobalVideoController *controller = (MDGlobalVideoController *)MDOverlayWindow.rootViewController;
-            controller.player.volume = MDVolume;
-        }
-
-        if (!MDLocked && !MDShowing) {
+            ((MDGlobalVideoController *)MDOverlayWindow.rootViewController).player.volume = MDVolume;
+        } else if (!MDLocked) {
             MDStartTimer(MDDelay);
         }
     });
 }
 
 static void MDHandleAudioInterruption(NSNotification *notification) {
-    NSDictionary *userInfo = notification.userInfo;
-    NSNumber *type = userInfo[AVAudioSessionInterruptionTypeKey];
+    NSNumber *type = notification.userInfo[AVAudioSessionInterruptionTypeKey];
     if (![type isKindOfClass:NSNumber.class]) return;
 
+    MDGlobalVideoController *controller = [MDOverlayWindow.rootViewController isKindOfClass:MDGlobalVideoController.class] ? (MDGlobalVideoController *)MDOverlayWindow.rootViewController : nil;
+    if (!controller || controller.finishing) return;
+
     if (type.integerValue == AVAudioSessionInterruptionTypeBegan) {
-        MDGlobalVideoController *controller = [MDOverlayWindow.rootViewController isKindOfClass:MDGlobalVideoController.class] ? (MDGlobalVideoController *)MDOverlayWindow.rootViewController : nil;
         controller.interrupted = YES;
         [controller.player pause];
-    } else if (type.integerValue == AVAudioSessionInterruptionTypeEnded) {
-        MDGlobalVideoController *controller = [MDOverlayWindow.rootViewController isKindOfClass:MDGlobalVideoController.class] ? (MDGlobalVideoController *)MDOverlayWindow.rootViewController : nil;
-        if (controller && controller.interrupted && !controller.finishing) {
-            controller.interrupted = NO;
-            [[AVAudioSession sharedInstance] setActive:YES error:nil];
-            [controller.player play];
-        }
+    } else if (type.integerValue == AVAudioSessionInterruptionTypeEnded && controller.interrupted) {
+        controller.interrupted = NO;
+        [[AVAudioSession sharedInstance] setActive:YES error:nil];
+        [controller.player play];
     }
 }
 
@@ -476,21 +416,18 @@ static void MDChangedCallback(CFNotificationCenterRef center, void *observer, CF
     NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;
 
     MDProtectedUnavailable = [nc addObserverForName:UIApplicationProtectedDataWillBecomeUnavailableNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            MDLocked = YES;
-            MDPauseTimerForLock();
-        });
+        MDLocked = YES;
+        MDPauseTimerForLock();
     }];
 
     MDProtectedAvailable = [nc addObserverForName:UIApplicationProtectedDataDidBecomeAvailableNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            MDLocked = NO;
-            MDResumeTimerAfterUnlock();
-        });
+        MDLocked = NO;
+        MDResumeTimerAfterUnlock();
     }];
 
     MDWillResignActive = [nc addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
-        if (UIApplication.sharedApplication.protectedDataAvailable) {
+        if (!UIApplication.sharedApplication.protectedDataAvailable) {
+            MDLocked = YES;
             MDPauseTimerForLock();
         }
     }];
