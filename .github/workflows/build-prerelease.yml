@@ -38,7 +38,8 @@ jobs:
             -i video.mp4 \
             -vf "chromakey=0x00ff00:0.20:0.10,format=yuva444p10le" \
             -c:v prores_ks -profile:v 4 -pix_fmt yuva444p10le \
-            -an "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
+            -c:a aac -b:a 192k \
+            "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
           test -s "layout/Library/Application Support/MusorDropTrollTweak/video_alpha.mov"
 
       - name: Build rootful package
@@ -47,10 +48,12 @@ jobs:
           export THEOS="$HOME/theos"
           sed -i.bak 's/^Architecture:.*/Architecture: iphoneos-arm/' control
           rm -rf packages build/packages
+          rm -f control.bak
           mkdir -p build/packages
           make clean package FINALPACKAGE=1 STRIP=1 THEOS_PACKAGE_SCHEME=
           cp packages/*.deb build/packages/MusorDropTrollTweak-rootful.deb
           git checkout -- control
+          rm -f control.bak
 
       - name: Build rootless package
         run: |
@@ -58,9 +61,11 @@ jobs:
           export THEOS="$HOME/theos"
           make clean
           sed -i.bak 's/^Architecture:.*/Architecture: iphoneos-arm64/' control
+          rm -f control.bak
           make package FINALPACKAGE=1 STRIP=1 THEOS_PACKAGE_SCHEME=rootless
           cp packages/*.deb build/packages/MusorDropTrollTweak-rootless.deb
           git checkout -- control
+          rm -f control.bak
 
       - name: Install RootHide Theos
         run: |
@@ -74,15 +79,20 @@ jobs:
           export THEOS="$HOME/theos-roothide"
           make clean
           sed -i.bak 's/^Architecture:.*/Architecture: iphoneos-arm64e/' control
+          rm -f control.bak
           make package FINALPACKAGE=1 STRIP=1 THEOS_PACKAGE_SCHEME=roothide
           cp packages/*.deb build/packages/MusorDropTrollTweak-roothide.deb
           git checkout -- control
+          rm -f control.bak
 
       - name: Verify package outputs
         run: |
           set -euo pipefail
           ls -lh build/packages/*.deb
           test "$(find build/packages -maxdepth 1 -name '*.deb' | wc -l | tr -d ' ')" -eq 3
+          for pkg in build/packages/*.deb; do
+            dpkg-deb --info "$pkg" >/dev/null
+          done
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
@@ -101,5 +111,5 @@ jobs:
           gh release create "$TAG" \
             --prerelease \
             --title "$TITLE" \
-            --notes "Automatic build from commit ${GITHUB_SHA}. Includes rootful, rootless and RootHide packages. The bundled default video is chroma-keyed to remove the green screen." \
+            --notes "Automatic build from commit ${GITHUB_SHA}. Includes rootful, rootless and RootHide packages. The bundled default video is chroma-keyed to remove the green screen while preserving audio." \
             build/packages/*.deb
